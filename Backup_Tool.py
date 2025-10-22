@@ -2,16 +2,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
 import time
-import json
 import logging
 import threading
 from app import app, socketio
 from flask import Flask, render_template, request, redirect, url_for, session
-from outsourced_functions import save, read, data_file_path
+from outsourced_functions import save, read, check_for_data_file
 from lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
-import global_variables
-
-data_file_path = global_variables.data_file_path
 
 logging.basicConfig(
     filename="backup_tool.log",      # Name der Logdatei
@@ -95,15 +91,7 @@ def start_backup():
     thread = threading.Thread(target=check_for_backup, daemon=True)
     thread.start()
 
-def check_for_data_file():
-    global data_file_path
-    if not data_file_path.exists():
-        default_content = {
-            "backup_paths": [],
-            "users": []
-        }
-        with open(data_file_path, 'w', encoding='utf-8') as f:
-            json.dump(default_content, f, indent=4)
+
 
 def update_backup_times():
     print("Update times.")
