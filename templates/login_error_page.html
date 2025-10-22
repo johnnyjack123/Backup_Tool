@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" class="size-full">
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Internal Server Error</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='error/page.css') }}">
+  </head>
+
+  <body class="size-full flex-center bg-dark">
+
+    <div>
+
+      <h1>Login error!</h1>
+      <h2>{{ error }} </h2>
+      <p>
+        You can
+        <a href="{{ url_for('log_in_page') }}" class="link">log in again</a>
+        or create a new account
+        <a href="{{ url_for('sign_up_page') }}" class="link">
+          sign in
+        </a>
+      </p>
+
+    </div>
+
+  </body>
+
+</html>

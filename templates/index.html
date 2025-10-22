@@ -1,18 +1,54 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <title>Backup Status</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #353536;
+            color: #e0e0e0;
+        }
+        .card {
+            background-color: #1e1e1e;
+            border: 1px solid #2c2c2c;
+            border-radius: 1rem;
+        }
+        .btn-outline-success, .btn-outline-danger {
+            border-width: 2px;
+        }
+        .modal-content {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+        }
+        .form-control {
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+            border: 1px solid #3a3a3a;
+        }
+        .form-control:focus {
+            background-color: #2a2a2a;
+            color: #fff;
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        }
+    </style>
 </head>
-<body class="bg-light">
+<body>
 <div class="container py-5">
-    <h1 class="mb-4">Backup Status</h1>
 
-    <!-- Button zum Öffnen des Modals -->
-    <button type="button" class="btn btn-success mb-4" data-bs-toggle="modal" data-bs-target="#addBackupModal">
-        Neues Backup hinzufügen
-    </button>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0">Backup Status</h1>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('settings_page') }}" class="btn btn-outline-success">Settings</a>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-start mb-4">
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addBackupModal">
+            Neues Backup hinzufügen
+        </button>
+    </div>
 
     <!-- Bereich für Backups -->
     <div id="backupContainer" class="row g-3"></div>
@@ -25,15 +61,14 @@
             <form action="{{ url_for('create_backup_task') }}" method="POST">
                 <div class="modal-header">
                     <h5 class="modal-title" id="addBackupLabel">Create new backup rule</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schließen"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label" for="backupName">Name</label>
                         <input type="text" class="form-control" id="backupName" name="name"
                                placeholder="Choose a unique name" required>
-                        <div id="nameError" class="form-text text-danger" style="display:none;">Name already exists!
-                        </div>
+                        <div id="nameError" class="form-text text-danger" style="display:none;">Name already exists!</div>
                     </div>
 
                     <div class="mb-3">
@@ -42,24 +77,15 @@
                                placeholder="Copy path" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label" for="backupSavePath">Path to the folder where the backup is going to
-                            be stored.</label>
+                        <label class="form-label" for="backupSavePath">Path to the folder where the backup is going to be stored.</label>
                         <input type="text" class="form-control" id="backupSavePath" name="folder_to_save_backup"
-                               placeholder="Copy path"
-                               required>
+                               placeholder="Copy path" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label" for="backupFrequency">Backup frequency in hours</label>
-                        <input
-                                type="number"
-                                class="form-control"
-                                id="backupFrequency"
-                                name="backup_frequency"
-                                min="1"
-                                step="1"
-                                required
-                                oninput="this.value = this.value.replace(/[^0-9]/g, ''); if(this.value < 1) this.value = 1;"
-                                placeholder="Only values larger than 1 possible">
+                        <input type="number" class="form-control" id="backupFrequency" name="backup_frequency" min="1" step="1" required
+                               oninput="this.value = this.value.replace(/[^0-9]/g, ''); if(this.value < 1) this.value = 1;"
+                               placeholder="Only values larger than 1 possible">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -70,6 +96,15 @@
         </div>
     </div>
 </div>
+
+<!-- Deine restlichen Modals und Scripts bleiben unverändert -->
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+<!-- Dein bestehendes JavaScript bleibt gleich -->
+</body>
+</html>
 
 <!-- Edit Modal -->
 <div class="modal fade" id="editBackupModal" tabindex="-1" aria-labelledby="editBackupLabel" aria-hidden="true">
@@ -139,6 +174,9 @@
     </div>
 </div>
 
+<form id="toggleProcessForm" action="{{ url_for('toggle_process_status') }}" method="POST" style="display:none;">
+  <input type="hidden" id="toggleProcessName" name="name">
+</form>
 
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -154,9 +192,10 @@
 const keyReplacements = {
     'folder_to_backup': 'Folder to save',
     'folder_to_save_backup': 'Folder to store',
-    'backup_frequency': 'Backup frequency',
+    'backup_frequency': 'Backup frequency in hours',
     'last_backup': 'Last Backup',
-    'status': 'Status'
+    'status': 'Status',
+    'status_message': 'Status Message'
 };
 
 // Backup Karten erzeugen mit keyReplacement
@@ -184,8 +223,26 @@ deleteBtn.addEventListener('click', () => {
     deleteModal.show();
 });
 
+// innerhalb der backupArray.forEach Schleife, nach deleteBtn
+const toggleBtn = document.createElement('button');
+toggleBtn.type = 'button';
+toggleBtn.classList.add('btn', 'btn-warning', 'btn-sm', 'm-1'); // Styling
+// Setze den Text je nach Status
+toggleBtn.textContent = (entry.status === 'paused') ? 'Continue' : 'Pause';
+
+// Event: beim Klick wird Route aufgerufen, Name im hidden input
+toggleBtn.addEventListener('click', () => {
+    // Hidden input mit Namen befüllen
+    document.getElementById('toggleProcessName').value = entry.name;
+    // Formular absenden (z.B. per POST zu /toggle_process)
+    document.getElementById('toggleProcessForm').submit();
+});
+
 header.appendChild(titleSpan);
+
+header.appendChild(toggleBtn);
 header.appendChild(deleteBtn);
+
     const ul = document.createElement('ul');
     ul.classList.add('list-group', 'list-group-flush');
 
@@ -198,15 +255,27 @@ header.appendChild(deleteBtn);
     const replacedKey = keyReplacements[key] || key;
 
     if (key === 'last_backup') {
-        // Leerer Platzhalter, wird durch Sockets befüllt
         li.id = `last_backup-${entry.name}`;
         li.innerHTML = `<strong>${replacedKey}:</strong> <em>Loading...</em>`;
+    } else if (key === 'status') {
+        // Status Badge mit Farben
+        let badgeClass = 'bg-secondary';
+        if (value === 'running') badgeClass = 'bg-success';
+        else if (value === 'paused') badgeClass = 'bg-warning';
+        else if (value === 'stopped') badgeClass = 'bg-danger';
+
+        li.innerHTML = `<strong>${replacedKey}:</strong> <span class="badge ${badgeClass}">${value}</span>`;
+    } else if (replacedKey.toLowerCase().includes('status')) {
+        // Status-Message Badge
+        let badgeClass = (value.toLowerCase() === 'ok') ? 'bg-success' : 'bg-danger';
+        li.innerHTML = `<strong>${replacedKey}:</strong> <span class="badge ${badgeClass}">${value}</span>`;
     } else {
         li.innerHTML = `<strong>${replacedKey}:</strong> ${value}`;
     }
 
     ul.appendChild(li);
 }
+
 
 
     cardBody.appendChild(header);

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>
+        Account Settings
+    </title>
+    <!-- Bootswatch Darkly Theme -->
+    <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.1/dist/darkly/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="bg-dark text-light">
+
+<div class="mockup bg-secondary text-light p-4 rounded mx-auto" style="max-width: 40rem;">
+
+    <!-- Header -->
+    <div class="d-flex align-items-center mb-4" style="gap: 1rem">
+                      <a href="{{ url_for('home') }}" class="btn btn-outline-danger">Back</a>
+
+        <h1 class="m-0">
+            Account Settings
+        </h1>
+
+    </div>
+
+    <!-- Manage User Button -->
+    <hr class="my-4">
+    <form action="{{ url_for('settings') }}" method="POST" class="mx-auto">
+        <h3 class="text-center mb-4">Edit userdata</h3>
+        <div class="mb-3">
+            <input type="text"
+                   name="new_username"
+                   class="form-control bg-secondary border-dark text-light"
+                   placeholder="Change username. Leave empty if you wont change.">
+        </div>
+        <div class="mb-3">
+            <input type="password"
+                   name="password"
+                   class="form-control bg-secondary border-dark text-light"
+                   placeholder="Enter new password. Leave empty if you wont change.">
+        </div>
+        <div class="mb-3">
+            <input type="password"
+                   name="confirmed_password"
+                   class="form-control bg-secondary border-dark text-light"
+                   placeholder="Confirm new password. Leave empty if you wont change.">
+        </div>
+
+        <div class="d-flex justify-content-center">
+            <input
+                    type="submit"
+                    class="btn btn-info text-white w-100"
+                    value="Submit">
+        </div>
+
+    </form>
+    <hr class="my-4">
+    <div class="d-flex align-items-center mb-4" style="gap: 1rem">
+        <a href="{{ url_for('log_out') }}"
+           data-bs-toggle="tooltip"
+           data-bs-title="Log out"
+           class="btn btn-info w-100">
+            Log out
+        </a>
+    </div>
+</div>
+</body>
+</html>

@@ -1,21 +1,17 @@
-import eventlet
-import eventlet.wsgi
-
-eventlet.monkey_patch()
-
 from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
 import time
 import json
 import logging
-from flask import Flask, render_template, request, redirect, url_for
 import threading
-from flask_socketio import SocketIO, emit
+from app import app, socketio
+from flask import Flask, render_template, request, redirect, url_for, session
+from outsourced_functions import save, read, data_file_path
+from lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
+import global_variables
 
-
-app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet')
+data_file_path = global_variables.data_file_path
 
 logging.basicConfig(
     filename="backup_tool.log",      # Name der Logdatei
@@ -25,18 +21,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger()
-
-data_file_path = Path("data.json")
-
-def save(data):
-    with open(data_file_path, "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=4)
-    return
-
-def read():
-    with open(data_file_path, "r", encoding="utf-8") as file:
-        data = json.load(file)
-        return data
 
 def ignore_backup(dir, contents):
     return ['backup'] if 'backup' in contents else []
@@ -63,40 +47,44 @@ def check_for_backup():
         backup_paths = file["backup_paths"]
         if backup_paths:
             for entry, path in enumerate(backup_paths):
-                last_backup = path["last_backup"]
-                if last_backup:
-                    backup_frequency = path["backup_frequency"]
-                    if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
-                        folder_to_backup = Path(path["folder_to_backup"])
-                        folder_to_save_backup = Path(path["folder_to_save_backup"])
+                status = path["status"]
+                if status == "running":
+                    last_backup = path["last_backup"]
+                    if last_backup:
+                        backup_frequency = int(path["backup_frequency"])
+                        if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
+                            folder_to_backup = Path(path["folder_to_backup"])
+                            folder_to_save_backup = Path(path["folder_to_save_backup"])
+                            result = backup_folders(folder_to_backup, folder_to_save_backup)
+                            if not result:
+                                status_message = f"Error in process {path["name"]}. See logs for more detailed error message."
+                                path["status_message"] = status_message
+                            else:
+                                status_message = "ok"
+
+                            socketio.emit('status_update', {'name': path["name"], 'status_message': status_message})
+                            file["backup_paths"][entry]["status_message"] = status_message
+                            file["backup_paths"][entry]["last_backup"] = now.isoformat()
+                            save(file)
+                            update_backup_times()
+                    else:
+                        file["backup_paths"][entry]["last_backup"] = now.isoformat()
+                        save(file)
+                        folder_to_backup = path["folder_to_backup"]
+                        folder_to_save_backup = path["folder_to_save_backup"]
                         result = backup_folders(folder_to_backup, folder_to_save_backup)
                         if not result:
-                            status = f"Error in process {path["name"]}. See logs for more detailed error message."
-                            path["status"] = status
+                            status_message = f"Error in process {path["name"]}. See logs for more detailed error message."
+                            path["status_message"] = status_message
                         else:
-                            status = "ok"
+                            status_message = "ok"
 
-                        socketio.emit('status_update', {'name': path["name"], 'status': status})
-                        file["backup_paths"][entry]["status"] = status
-                        file["backup_paths"][entry]["last_backup"] = now.isoformat()
+                        socketio.emit('status_update', {'name': path["name"], 'status_message': status_message})
+                        file["backup_paths"][entry]["status_message"] = status_message
                         save(file)
                         update_backup_times()
                 else:
-                    file["backup_paths"][entry]["last_backup"] = now.isoformat()
-                    save(file)
-                    folder_to_backup = path["folder_to_backup"]
-                    folder_to_save_backup = path["folder_to_save_backup"]
-                    result = backup_folders(folder_to_backup, folder_to_save_backup)
-                    if not result:
-                        status = f"Error in process {path["name"]}. See logs for more detailed error message."
-                        path["status"] = status
-                    else:
-                        status = "ok"
-
-                    socketio.emit('status_update', {'name': path["name"], 'status': status})
-                    file["backup_paths"][entry]["status"] = status
-                    save(file)
-                    update_backup_times()
+                    continue
 
             time.sleep(60)
         else:
@@ -111,7 +99,8 @@ def check_for_data_file():
     global data_file_path
     if not data_file_path.exists():
         default_content = {
-            "backup_paths": []
+            "backup_paths": [],
+            "users": []
         }
         with open(data_file_path, 'w', encoding='utf-8') as f:
             json.dump(default_content, f, indent=4)
@@ -127,12 +116,19 @@ def update_backup_times():
         backup_times.append(content)
     socketio.emit('backup_time_update', backup_times)
 
+def validate_filepath(path):
+    path = Path(path)
+    if path.exists():
+        return True
+    else:
+        return False
 
 @socketio.on('connect')
 def handle_connect():
     update_backup_times()
 
 @app.route("/")
+@login_required
 def home():
     file = read()
     backup_paths = file["backup_paths"]
@@ -147,8 +143,9 @@ def home():
     return render_template("index.html", backup_paths=backup_paths)
 
 @app.route("/create_backup_task", methods=["POST"])
+@login_required
 def create_backup_task():
-    name = request.form.get("name")
+    name = request.form.get("name").strip('"').strip("'")
     folder_to_backup = request.form.get("folder_to_backup")
     folder_to_save_backup = request.form.get("folder_to_save_backup")
     backup_frequency = request.form.get("backup_frequency")
@@ -156,13 +153,24 @@ def create_backup_task():
     folder_to_backup = folder_to_backup.replace('\\', '\\').strip('"').strip("'")
     folder_to_save_backup = folder_to_save_backup.replace('\\', '\\').strip('"').strip("'")
 
+    result_folder_to_backup = validate_filepath(folder_to_backup)
+    result_folder_to_save_backup = validate_filepath(folder_to_save_backup)
+
+    if result_folder_to_backup and result_folder_to_save_backup:
+        status_message = "ok"
+        status = "running"
+    else:
+        status_message = "Invalid file path"
+        status = "stopped"
+
     entry = {
         "folder_to_backup": folder_to_backup,
         "folder_to_save_backup": folder_to_save_backup,
         "name": name,
         "last_backup": "",
         "backup_frequency": int(backup_frequency),
-        "status": "ok"
+        "status_message": status_message,
+        "status": status
     }
     file = read()
     file["backup_paths"].append(entry)
@@ -170,29 +178,41 @@ def create_backup_task():
     return redirect(url_for("home"))
 
 @app.route("/edit_backup_task", methods=["POST"])
+@login_required
 def edit_backup_task():
-    name = request.form.get("name")
-    folder_to_backup = request.form.get("folder_to_backup")
-    folder_to_save_backup = request.form.get("folder_to_save_backup")
+    name = request.form.get("name").strip('"').strip("'")
+    folder_to_backup = request.form.get("folder_to_backup").strip('"').strip("'")
+    folder_to_save_backup = request.form.get("folder_to_save_backup").strip('"').strip("'")
     backup_frequency = request.form.get("backup_frequency")
+    result_folder_to_backup = validate_filepath(folder_to_backup)
+    result_folder_to_save_backup = validate_filepath(folder_to_save_backup)
+
+    if result_folder_to_backup and result_folder_to_save_backup:
+        status_message = "ok"
+        status = "running"
+    else:
+        status_message = "Invalid file path"
+        status = "stopped"
     file = read()
     for x, entry in enumerate(file["backup_paths"]):
         if entry["name"] == name:
             last_backup = entry["last_backup"]
-            status = entry["status"]
             entry = {
                 "folder_to_backup": folder_to_backup,
                 "folder_to_save_backup": folder_to_save_backup,
                 "name": name,
                 "last_backup": last_backup,
-                "backup_frequency": backup_frequency,
+                "backup_frequency": int(backup_frequency),
+                "status_message": status_message,
                 "status": status
             }
 
             file["backup_paths"][x] = entry
             save(file)
+    return redirect(url_for("home"))
 
 @app.route("/delete_backup_task", methods=["POST"])
+@login_required
 def delete_backup_task():
     name = request.form.get("name")
     file = read()
@@ -203,8 +223,102 @@ def delete_backup_task():
     save(file)
     return redirect(url_for("home"))
 
+@app.route("/toggle_process_status", methods=["POST"])
+@login_required
+def toggle_process_status():
+    name = request.form.get("name")
+    file = read()
+    for x, entry in enumerate(file["backup_paths"]):
+        if entry["name"] == name:
+            if entry["status"] != "stopped":
+                if entry["status"] == "running":
+                    entry["status"] = "paused"
+                else:
+                    entry["status"] = "running"
+                file["backup_paths"][x] = entry
+                save(file)
+            else:
+                logging.info(f"Process {entry["name"]} can't resumed, because there is an unknown error.")
+            break
+    return redirect(url_for("home"))
+
+@app.route("/log_in_page")
+def log_in_page():
+    print("Login page")
+    result = check_log_in()
+    if result:
+        print("Success")
+        return redirect(url_for("home"))
+    else:
+        print("No success")
+        return render_template("log_in.html")
+
+@app.route("/log_in", methods=["POST"])
+def log_in():
+    print("In log in ")
+    username = request.form.get("username")
+    password = request.form.get("password")
+
+    result = log_user_in(username, password)
+    if result != "success":
+        return render_template("login_error_page.html", error=result)
+    print("success")
+    return redirect(url_for("home"))
+
+@app.route("/sign_up_page", methods=["GET"])
+def sign_up_page():
+    return render_template("sign_up.html")
+
+@app.route("/sign_up", methods=["POST"])
+def sign_up():
+    username = request.form.get("username")
+    password = request.form.get("password")
+    confirmed_password = request.form.get("confirm_password")
+
+    result = signing_up(username, password, confirmed_password)
+    if result != "success":
+        render_template("login_error_page.html", error=result)
+    return render_template("log_in.html")
+
+@app.route("/log_out")
+def log_out():
+    log_user_out()
+    return redirect(url_for("log_in_page"))
+
+@app.route("/settings_page")
+def settings_page():
+    return render_template("settings.html")
+
+@app.route("/settings", methods=["POST"])
+def settings():
+    password = request.form.get("password")
+    confirmed_password = request.form.get("confirmed_password")
+    username = session.get("username")
+    new_username = request.form.get("new_username")
+    file = read()
+    userdata = file["userdata"]
+    if password and confirmed_password:
+        for x, user in enumerate(userdata):
+            if user["username"] == session.get("username"):
+                salt = user["salt"]
+                if not salt:
+                    return render_template("login_error_page", error="No salt found.")
+
+                hashed_password, success = validate_passwords(password, confirmed_password, salt, username, "password only")
+                if success:
+                    user["password_hash"] = hashed_password
+                    file["userdata"][x] = user
+                    save(file)
+    if new_username:
+        for x, user in enumerate(userdata):
+            if user["username"] == session.get("username"):
+                user["username"] = new_username
+                file["userdata"][x] = user
+                save(file)
+    return redirect(url_for("home"))
+
 if __name__ == "__main__":
     check_for_data_file()
     start_backup()
+    set_cookie_key()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
-#TODO: checken, ob Pfad valid ist, wenn ich, in status pushen
