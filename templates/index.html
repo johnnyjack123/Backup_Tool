@@ -142,6 +142,8 @@
                             required
                             oninput="this.value = this.value.replace(/[^0-9]/g, ''); if(this.value < 1) this.value = 1;">
                     </div>
+                    <input type="hidden" id="editBackupId" name="backup_id">
+
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
@@ -158,6 +160,7 @@
         <div class="modal-content">
             <form id="deleteForm" action="{{ url_for('delete_backup_task') }}" method="POST">
                 <input type="hidden" id="deleteBackupName" name="name">
+                <input type="hidden" id="deleteBackupId" name="backup_id">
                 <div class="modal-header">
                     <h5 class="modal-title" id="deleteConfirmLabel">Delete Backup Process</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
@@ -165,6 +168,7 @@
                 <div class="modal-body">
                     <p>Are you sure to delete the backup process <strong id="deleteBackupNameText"></strong>? All of your existing version created by this process are still storaged on your device after this action. This action can´t be undone.</p>
                 </div>
+
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abort</button>
                     <button type="submit" class="btn btn-danger">Yes, delete</button>
@@ -219,6 +223,9 @@ deleteBtn.title = 'Delete';
 deleteBtn.addEventListener('click', () => {
     document.getElementById('deleteBackupName').value = entry.name;
     document.getElementById('deleteBackupNameText').textContent = entry.name;
+
+    document.getElementById('deleteBackupId').value = entry.backup_id || '';
+
     const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
     deleteModal.show();
 });
@@ -276,8 +283,6 @@ header.appendChild(deleteBtn);
     ul.appendChild(li);
 }
 
-
-
     cardBody.appendChild(header);
     cardBody.appendChild(ul);
 
@@ -289,16 +294,19 @@ header.appendChild(deleteBtn);
 
     // Event Listener mit spezifischem entry
     editBtn.addEventListener('click', () => {
-        document.getElementById('editBackupName').value = entry.name;
-        document.getElementById('editBackupPath').value = entry.folder_to_backup || '';
-        document.getElementById('editBackupSavePath').value = entry.folder_to_save_backup || '';
-        document.getElementById('editBackupFrequency').value = entry.backup_frequency || '';
+    document.getElementById('editBackupName').value = entry.name;
+    document.getElementById('editBackupPath').value = entry.folder_to_backup || '';
+    document.getElementById('editBackupSavePath').value = entry.folder_to_save_backup || '';
+    document.getElementById('editBackupFrequency').value = entry.backup_frequency || '';
+    document.getElementById('originalName').value = entry.name;
 
-        document.getElementById('originalName').value = entry.name;
+    // 👇 Hier: backup_id setzen (falls sie in entry steckt)
+    document.getElementById('editBackupId').value = entry.backup_id || '';
 
-        const editModal = new bootstrap.Modal(document.getElementById('editBackupModal'));
-        editModal.show();
-    });
+    const editModal = new bootstrap.Modal(document.getElementById('editBackupModal'));
+    editModal.show();
+});
+
 
     cardBody.appendChild(editBtn);
     card.appendChild(cardBody);
@@ -348,6 +356,7 @@ nameInput.addEventListener('input', () => {
         }
     });
 });
+
 
 
 </script>

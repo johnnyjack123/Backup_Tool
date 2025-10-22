@@ -4,6 +4,8 @@ from app import app
 from outsourced_functions import read, save
 from functools import wraps
 from flask import redirect, url_for, session, request
+from uuid import uuid4
+
 
 def set_cookie_key():
     file = read()
@@ -22,7 +24,7 @@ def set_cookie_key():
 def login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if 'username' not in session:
+        if 'user_id' not in session:
             return redirect(url_for("sign_up_page"))
         return f(*args, **kwargs)
     return wrapper
@@ -34,11 +36,11 @@ def validate_passwords(password, confirmed_password, salt, username, mode):
     hashed_confirmed_password = hashlib.sha256((str(confirmed_password) + salt).encode()).hexdigest()
     success = False
     if hashed_password != hashed_confirmed_password:
-        return "No password match", success
+        return "No password match or username already exists.", success
     if mode != "password only":
         for user in userdata:
             if username == user["username"]:
-                return "This user already exists!", success
+                return "No password match or username already exists.", success
         if username is None or username == "None":
             return "Username None is not available", success
     success = True
@@ -63,6 +65,7 @@ def log_user_in(username, password):
                 hashed_password = hashlib.sha256((password + salt).encode()).hexdigest()
                 if hashed_password == user["password_hash"]:
                     session['username'] = username
+                    session['user_id'] = user["user_id"]
                     return "success"
                 else:
                     return "Wrong password"
@@ -75,11 +78,19 @@ def signing_up(username, password, confirmed_password):
     userdata = file["userdata"]
     salt = os.urandom(32).hex()
     hashed_password, success = validate_passwords(password, confirmed_password, salt, username, "whole validation")
+    user_id = str(uuid4())
     if success:
+        if not userdata:
+            rank = "admin"
+        else:
+            rank = "user"
         entry = {
+            "user_id": user_id,
             "username": username,
             "password_hash": hashed_password,
-            "salt": salt
+            "salt": salt,
+            "rank": rank,
+            "backup_processes": []
         }
         userdata.append(entry)
         file["userdata"] = userdata

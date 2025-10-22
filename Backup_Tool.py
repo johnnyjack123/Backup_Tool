@@ -8,6 +8,8 @@ from app import app, socketio
 from flask import Flask, render_template, request, redirect, url_for, session
 from outsourced_functions import save, read, check_for_data_file
 from lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
+from uuid import uuid4
+
 
 logging.basicConfig(
     filename="backup_tool.log",      # Name der Logdatei
@@ -84,7 +86,6 @@ def check_for_backup():
 
             time.sleep(60)
         else:
-            print("No backup paths.")
             time.sleep(5)
 
 def start_backup():
@@ -120,23 +121,26 @@ def handle_connect():
 def home():
     file = read()
     backup_paths = file["backup_paths"]
-    """
-    backup_times = []
-    for entry in backup_paths:
-        content = {"name": entry["name"],
-                   "last_backup": entry["last_backup"]}
-        backup_times.append(content)
-    print(backup_times)
-    socketio.emit('backup_time_update', backup_times)"""
-    return render_template("index.html", backup_paths=backup_paths)
+    userdata = file["userdata"]
+    visible_processes = []
+    username = session.get("username")
+    for user in userdata:
+        if user["username"] == username:
+            for backup_process_id in user["backup_processes"]:
+                for backup in backup_paths:
+                    if backup["backup_id"] == backup_process_id:
+                        visible_processes.append(backup)
+    return render_template("index.html", backup_paths=visible_processes)
 
 @app.route("/create_backup_task", methods=["POST"])
 @login_required
 def create_backup_task():
     name = request.form.get("name").strip('"').strip("'")
+    username = session.get("username")
     folder_to_backup = request.form.get("folder_to_backup")
     folder_to_save_backup = request.form.get("folder_to_save_backup")
     backup_frequency = request.form.get("backup_frequency")
+    backup_id = str(uuid4())
 
     folder_to_backup = folder_to_backup.replace('\\', '\\').strip('"').strip("'")
     folder_to_save_backup = folder_to_save_backup.replace('\\', '\\').strip('"').strip("'")
@@ -152,6 +156,7 @@ def create_backup_task():
         status = "stopped"
 
     entry = {
+        "backup_id": backup_id,
         "folder_to_backup": folder_to_backup,
         "folder_to_save_backup": folder_to_save_backup,
         "name": name,
@@ -161,6 +166,12 @@ def create_backup_task():
         "status": status
     }
     file = read()
+    userdata = file["userdata"]
+    for x, user in enumerate(userdata):
+        if user["username"] == username:
+            user["backup_processes"].append(backup_id)
+            file["userdata"][x] = user
+
     file["backup_paths"].append(entry)
     save(file)
     return redirect(url_for("home"))
@@ -172,6 +183,7 @@ def edit_backup_task():
     folder_to_backup = request.form.get("folder_to_backup").strip('"').strip("'")
     folder_to_save_backup = request.form.get("folder_to_save_backup").strip('"').strip("'")
     backup_frequency = request.form.get("backup_frequency")
+    backup_id = request.form.get("backup_id")
     result_folder_to_backup = validate_filepath(folder_to_backup)
     result_folder_to_save_backup = validate_filepath(folder_to_save_backup)
 
@@ -183,9 +195,10 @@ def edit_backup_task():
         status = "stopped"
     file = read()
     for x, entry in enumerate(file["backup_paths"]):
-        if entry["name"] == name:
+        if entry["backup_id"] == backup_id:
             last_backup = entry["last_backup"]
             entry = {
+                "backup_id": backup_id,
                 "folder_to_backup": folder_to_backup,
                 "folder_to_save_backup": folder_to_save_backup,
                 "name": name,
@@ -202,22 +215,27 @@ def edit_backup_task():
 @app.route("/delete_backup_task", methods=["POST"])
 @login_required
 def delete_backup_task():
-    name = request.form.get("name")
+    backup_id = request.form.get("backup_id")
+    username = session.get("username")
+    print(f"Backup id: {backup_id}")
     file = read()
     for x, entry in enumerate(file["backup_paths"]):
-        if entry["name"] == name:
+        if entry["backup_id"] == backup_id:
             del file["backup_paths"][x]
             break
+    for x, entry in enumerate(file["userdata"]):
+        if entry["username"] == username:
+            del entry["backup_processes"][x]
     save(file)
     return redirect(url_for("home"))
 
 @app.route("/toggle_process_status", methods=["POST"])
 @login_required
 def toggle_process_status():
-    name = request.form.get("name")
+    backup_id = request.form.get("backup_id")
     file = read()
     for x, entry in enumerate(file["backup_paths"]):
-        if entry["name"] == name:
+        if entry["backup_id"] == backup_id:
             if entry["status"] != "stopped":
                 if entry["status"] == "running":
                     entry["status"] = "paused"
@@ -265,7 +283,7 @@ def sign_up():
 
     result = signing_up(username, password, confirmed_password)
     if result != "success":
-        render_template("login_error_page.html", error=result)
+        return render_template("login_error_page.html", error=result)
     return render_template("log_in.html")
 
 @app.route("/log_out")
