@@ -117,11 +117,36 @@
     </div>
 </div>
 
+<!-- Delete Confirm Modal -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-labelledby="deleteConfirmLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="deleteForm" action="{{ url_for('delete_backup_task') }}" method="POST">
+                <input type="hidden" id="deleteBackupName" name="name">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteConfirmLabel">Delete Backup Process</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure to delete the backup process <strong id="deleteBackupNameText"></strong>? All of your existing version created by this process are still storaged on your device after this action. This action can´t be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abort</button>
+                    <button type="submit" class="btn btn-danger">Yes, delete</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
 <!-- Backup Anzeige Script -->
 <script>
+
     const backupArray = {{ backup_paths | tojson }};
     const container = document.getElementById('backupContainer');
 
@@ -142,21 +167,47 @@ backupArray.forEach(entry => {
     cardBody.classList.add('card', 'shadow-sm');
 
     const header = document.createElement('div');
-    header.classList.add('card-header', 'bg-primary', 'text-white', 'fw-bold');
-    header.textContent = entry.name ? entry.name : 'Unbenanntes Backup';
+header.classList.add('card-header', 'bg-primary', 'text-white', 'fw-bold', 'd-flex', 'justify-content-between', 'align-items-center');
 
+const titleSpan = document.createElement('span');
+titleSpan.textContent = entry.name ? entry.name : 'Unbenanntes Backup';
+
+const deleteBtn = document.createElement('button');
+deleteBtn.type = 'button';
+deleteBtn.classList.add('btn', 'btn-danger', 'btn-sm');
+deleteBtn.innerHTML = 'Delete'; // Oder 'Löschen' oder Icon
+deleteBtn.title = 'Delete';
+deleteBtn.addEventListener('click', () => {
+    document.getElementById('deleteBackupName').value = entry.name;
+    document.getElementById('deleteBackupNameText').textContent = entry.name;
+    const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+    deleteModal.show();
+});
+
+header.appendChild(titleSpan);
+header.appendChild(deleteBtn);
     const ul = document.createElement('ul');
     ul.classList.add('list-group', 'list-group-flush');
 
     for (const [key, value] of Object.entries(entry)) {
-        if (key === 'name') continue;
-        const li = document.createElement('li');
-        li.classList.add('list-group-item');
+    if (key === 'name') continue;
 
-        const replacedKey = keyReplacements[key] || key;
+    const li = document.createElement('li');
+    li.classList.add('list-group-item');
+
+    const replacedKey = keyReplacements[key] || key;
+
+    if (key === 'last_backup') {
+        // Leerer Platzhalter, wird durch Sockets befüllt
+        li.id = `last_backup-${entry.name}`;
+        li.innerHTML = `<strong>${replacedKey}:</strong> <em>Loading...</em>`;
+    } else {
         li.innerHTML = `<strong>${replacedKey}:</strong> ${value}`;
-        ul.appendChild(li);
     }
+
+    ul.appendChild(li);
+}
+
 
     cardBody.appendChild(header);
     cardBody.appendChild(ul);
@@ -165,7 +216,7 @@ backupArray.forEach(entry => {
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.classList.add('btn', 'btn-outline-primary', 'm-3');
-    editBtn.textContent = 'Editieren';
+    editBtn.textContent = 'Edit';
 
     // Event Listener mit spezifischem entry
     editBtn.addEventListener('click', () => {
@@ -204,6 +255,31 @@ nameInput.addEventListener('input', () => {
         submitButton.disabled = false;
     }
 });
+
+
+    const socket = io();
+
+    socket.on('status_update', (data) => {
+        console.log("Status Update:", data);
+
+        // Beispiel: Statusfeld in Backup-Karte aktualisieren (du müsstest pro Backup eine Statusanzeige mit einer ID o.ä. anlegen)
+        const statusElement = document.querySelector(`#status-${data.name}`);
+        if (statusElement) {
+            statusElement.textContent = data.status;
+        }
+    });
+
+    socket.on('backup_time_update', (backupTimes) => {
+        console.log("Received backup_time_update:", backupTimes);
+
+    backupTimes.forEach(data => {
+        const lastBackupElement = document.getElementById(`last_backup-${data.name}`);
+        if (lastBackupElement) {
+            lastBackupElement.innerHTML = `<strong>${keyReplacements['last_backup']}:</strong> ${data.last_backup || "<em>Keine Daten</em>"}`;
+        }
+    });
+});
+
 
 </script>
 </body>

@@ -1,3 +1,8 @@
+import eventlet
+import eventlet.wsgi
+
+eventlet.monkey_patch()
+
 from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
@@ -6,9 +11,11 @@ import json
 import logging
 from flask import Flask, render_template, request, redirect, url_for
 import threading
+from flask_socketio import SocketIO, emit
+
 
 app = Flask(__name__)
-
+socketio = SocketIO(app, async_mode='eventlet')
 
 logging.basicConfig(
     filename="backup_tool.log",      # Name der Logdatei
@@ -20,12 +27,6 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 data_file_path = Path("data.json")
-
-#backup_paths = [
-#    {"folder_to_backup": Path(r"C:\Users\jonat\Documents\Programmieren\Backup_Tool\Test_backups"),
-#     "folder_to_save_backup": Path(r"C:\Users\jonat\Documents\Programmieren\Backup_Tool\backup")} # Do as many backup and store locations as you want, separated by a comma.
-#                                        # Make sure that folder_to_save_backup is noch in folder_to_backup
-#]
 
 def save(data):
     with open(data_file_path, "w", encoding="utf-8") as file:
@@ -42,6 +43,8 @@ def ignore_backup(dir, contents):
 
 def backup_folders(folder_to_backup, base_backup_dir):
     try:
+        folder_to_backup = Path(folder_to_backup)
+        base_backup_dir = Path(base_backup_dir)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         folder_to_save_backup = base_backup_dir / f"backup_{timestamp}"
 
@@ -64,16 +67,40 @@ def check_for_backup():
                 if last_backup:
                     backup_frequency = path["backup_frequency"]
                     if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
-                        folder_to_backup = path["folder_to_backup"]
-                        folder_to_save_backup = path["folder_to_save_backup"]
+                        folder_to_backup = Path(path["folder_to_backup"])
+                        folder_to_save_backup = Path(path["folder_to_save_backup"])
                         result = backup_folders(folder_to_backup, folder_to_save_backup)
                         if not result:
-                            path["status"] = f"Error in process {path["name"]}. See logs for more detailed error message."
+                            status = f"Error in process {path["name"]}. See logs for more detailed error message."
+                            path["status"] = status
+                        else:
+                            status = "ok"
+
+                        socketio.emit('status_update', {'name': path["name"], 'status': status})
+                        file["backup_paths"][entry]["status"] = status
+                        file["backup_paths"][entry]["last_backup"] = now.isoformat()
+                        save(file)
+                        update_backup_times()
                 else:
                     file["backup_paths"][entry]["last_backup"] = now.isoformat()
                     save(file)
+                    folder_to_backup = path["folder_to_backup"]
+                    folder_to_save_backup = path["folder_to_save_backup"]
+                    result = backup_folders(folder_to_backup, folder_to_save_backup)
+                    if not result:
+                        status = f"Error in process {path["name"]}. See logs for more detailed error message."
+                        path["status"] = status
+                    else:
+                        status = "ok"
+
+                    socketio.emit('status_update', {'name': path["name"], 'status': status})
+                    file["backup_paths"][entry]["status"] = status
+                    save(file)
+                    update_backup_times()
+
             time.sleep(60)
         else:
+            print("No backup paths.")
             time.sleep(5)
 
 def start_backup():
@@ -89,10 +116,34 @@ def check_for_data_file():
         with open(data_file_path, 'w', encoding='utf-8') as f:
             json.dump(default_content, f, indent=4)
 
+def update_backup_times():
+    print("Update times.")
+    file = read()
+    backup_paths = file["backup_paths"]
+    backup_times = []
+    for entry in backup_paths:
+        content = {"name": entry["name"],
+                   "last_backup": entry["last_backup"]}
+        backup_times.append(content)
+    socketio.emit('backup_time_update', backup_times)
+
+
+@socketio.on('connect')
+def handle_connect():
+    update_backup_times()
+
 @app.route("/")
 def home():
     file = read()
     backup_paths = file["backup_paths"]
+    """
+    backup_times = []
+    for entry in backup_paths:
+        content = {"name": entry["name"],
+                   "last_backup": entry["last_backup"]}
+        backup_times.append(content)
+    print(backup_times)
+    socketio.emit('backup_time_update', backup_times)"""
     return render_template("index.html", backup_paths=backup_paths)
 
 @app.route("/create_backup_task", methods=["POST"])
@@ -101,12 +152,16 @@ def create_backup_task():
     folder_to_backup = request.form.get("folder_to_backup")
     folder_to_save_backup = request.form.get("folder_to_save_backup")
     backup_frequency = request.form.get("backup_frequency")
+
+    folder_to_backup = folder_to_backup.replace('\\', '\\').strip('"').strip("'")
+    folder_to_save_backup = folder_to_save_backup.replace('\\', '\\').strip('"').strip("'")
+
     entry = {
         "folder_to_backup": folder_to_backup,
         "folder_to_save_backup": folder_to_save_backup,
         "name": name,
         "last_backup": "",
-        "backup_frequency": backup_frequency,
+        "backup_frequency": int(backup_frequency),
         "status": "ok"
     }
     file = read()
@@ -137,9 +192,19 @@ def edit_backup_task():
             file["backup_paths"][x] = entry
             save(file)
 
+@app.route("/delete_backup_task", methods=["POST"])
+def delete_backup_task():
+    name = request.form.get("name")
+    file = read()
+    for x, entry in enumerate(file["backup_paths"]):
+        if entry["name"] == name:
+            del file["backup_paths"][x]
+            break
+    save(file)
+    return redirect(url_for("home"))
+
 if __name__ == "__main__":
     check_for_data_file()
     start_backup()
-    app.run(host="0.0.0.0", port=5000, debug=True)
-
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
 #TODO: checken, ob Pfad valid ist, wenn ich, in status pushen
