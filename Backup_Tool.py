@@ -293,7 +293,23 @@ def log_out():
 
 @app.route("/settings_page")
 def settings_page():
-    return render_template("settings.html")
+    file = read()
+    userdata = file["userdata"]
+    username = session.get("username")
+    admin = False
+    for user in userdata:
+        if user["username"] == username:
+            if user["rank"] == "admin":
+                admin = True
+            else:
+                admin = False
+    if admin:
+        users = []
+        for user in userdata:
+            users.append(user["username"])
+    else:
+        users = []
+    return render_template("settings.html", users=users)
 
 @app.route("/settings", methods=["POST"])
 def settings():
