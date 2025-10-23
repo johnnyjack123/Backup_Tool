@@ -255,6 +255,8 @@ header.appendChild(deleteBtn);
 
     for (const [key, value] of Object.entries(entry)) {
     if (key === 'name') continue;
+    if (key === 'backup_id') continue;
+
 
     const li = document.createElement('li');
     li.classList.add('list-group-item');
@@ -300,7 +302,6 @@ header.appendChild(deleteBtn);
     document.getElementById('editBackupFrequency').value = entry.backup_frequency || '';
     document.getElementById('originalName').value = entry.name;
 
-    // 👇 Hier: backup_id setzen (falls sie in entry steckt)
     document.getElementById('editBackupId').value = entry.backup_id || '';
 
     const editModal = new bootstrap.Modal(document.getElementById('editBackupModal'));

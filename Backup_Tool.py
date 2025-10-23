@@ -10,32 +10,48 @@ from outsourced_functions import save, read, check_for_data_file
 from lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
 from uuid import uuid4
 
+# Eigenen Logger erstellen
+logger = logging.getLogger("my_backup_logger")
+logger.setLevel(logging.INFO)
 
-logging.basicConfig(
-    filename="backup_tool.log",      # Name der Logdatei
-    level=logging.INFO,           # Minimaler Log-Level (INFO und höher)
-    format="%(asctime)s - %(levelname)s - %(message)s",  # Zeitstempel und Log-Level
-    datefmt="%Y-%m-%d %H:%M:%S"  # Format des Zeitstempels
-)
+# File Handler für Datei-Ausgabe konfigurieren
+file_handler = logging.FileHandler("backup_tool.log")
+file_handler.setLevel(logging.INFO)
 
-logger = logging.getLogger()
+# Format für Logs definieren
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%Y-%m-%d %H:%M:%S")
+file_handler.setFormatter(formatter)
 
-def ignore_backup(dir, contents):
-    return ['backup'] if 'backup' in contents else []
+# Handler dem Logger hinzufügen
+logger.addHandler(file_handler)
+
+
+#def ignore_backup(dir, contents):
+#    return ['backup'] if 'backup' in contents else []
 
 def backup_folders(folder_to_backup, base_backup_dir):
     try:
-        folder_to_backup = Path(folder_to_backup)
-        base_backup_dir = Path(base_backup_dir)
+        folder_to_backup = Path(folder_to_backup).resolve()
+        base_backup_dir = Path(base_backup_dir).resolve()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         folder_to_save_backup = base_backup_dir / f"backup_{timestamp}"
+        folder_to_save_backup = folder_to_save_backup.resolve()
+
+        # Ignorierfunktion, die den Ordner zum Speichern ggf. ausschließt
+        def ignore_backup(current_dir, contents):
+            ignored = []
+            for item in contents:
+                item_path = Path(current_dir) / item
+                # Prüfe, ob item_path der Zielordner ist oder darin liegt
+                if folder_to_save_backup == item_path.resolve() or folder_to_save_backup.is_relative_to(item_path.resolve()):
+                    ignored.append(item)
+            return ignored
 
         shutil.copytree(src=str(folder_to_backup), dst=str(folder_to_save_backup), ignore=ignore_backup)
-        print("Successfully copied.")
-        logger.info("Successfully copied.")
+        logger.info("Successfully stored backup.")
         return True
     except Exception as e:
-        logger.error(f"Error by backup: {e}", exc_info=True)
+        logger.info(f"Error by backup: {e}")
         return False
 
 def check_for_backup():
@@ -92,10 +108,7 @@ def start_backup():
     thread = threading.Thread(target=check_for_backup, daemon=True)
     thread.start()
 
-
-
 def update_backup_times():
-    print("Update times.")
     file = read()
     backup_paths = file["backup_paths"]
     backup_times = []
@@ -154,6 +167,7 @@ def create_backup_task():
     else:
         status_message = "Invalid file path"
         status = "stopped"
+        logger.error("Invalid file path.")
 
     entry = {
         "backup_id": backup_id,
@@ -174,6 +188,7 @@ def create_backup_task():
 
     file["backup_paths"].append(entry)
     save(file)
+    logger.info("Successfully created backup process.")
     return redirect(url_for("home"))
 
 @app.route("/edit_backup_task", methods=["POST"])
@@ -193,6 +208,7 @@ def edit_backup_task():
     else:
         status_message = "Invalid file path"
         status = "stopped"
+        logger.error("Invalid file path.")
     file = read()
     for x, entry in enumerate(file["backup_paths"]):
         if entry["backup_id"] == backup_id:
@@ -210,6 +226,7 @@ def edit_backup_task():
 
             file["backup_paths"][x] = entry
             save(file)
+            logger.info(f"Successfully edited backup {name}.")
     return redirect(url_for("home"))
 
 @app.route("/delete_backup_task", methods=["POST"])
@@ -217,7 +234,6 @@ def edit_backup_task():
 def delete_backup_task():
     backup_id = request.form.get("backup_id")
     username = session.get("username")
-    print(f"Backup id: {backup_id}")
     file = read()
     for x, entry in enumerate(file["backup_paths"]):
         if entry["backup_id"] == backup_id:
@@ -225,7 +241,10 @@ def delete_backup_task():
             break
     for x, entry in enumerate(file["userdata"]):
         if entry["username"] == username:
-            del entry["backup_processes"][x]
+            for y, entry_id in enumerate(entry["backup_processes"]):
+                if entry_id == backup_id:
+                    del entry["backup_processes"][y]
+    logger.info(f"Successfully deleted backup {backup_id}")
     save(file)
     return redirect(url_for("home"))
 
@@ -239,36 +258,37 @@ def toggle_process_status():
             if entry["status"] != "stopped":
                 if entry["status"] == "running":
                     entry["status"] = "paused"
+                    logger.info(f"Process {entry["name"]} paused")
                 else:
                     entry["status"] = "running"
+                    logger.info(f"Process {entry["name"]} resumed")
                 file["backup_paths"][x] = entry
                 save(file)
             else:
-                logging.info(f"Process {entry["name"]} can't resumed, because there is an unknown error.")
+                logger.error(f"Process {entry["name"]} can't resumed, because there is an unknown error.")
             break
     return redirect(url_for("home"))
 
 @app.route("/log_in_page")
 def log_in_page():
-    print("Login page")
     result = check_log_in()
     if result:
-        print("Success")
+        logger.info("Successfully logged in.")
         return redirect(url_for("home"))
     else:
-        print("No success")
+        logger.info("Unregistert user")
         return render_template("log_in.html")
 
 @app.route("/log_in", methods=["POST"])
 def log_in():
-    print("In log in ")
     username = request.form.get("username")
     password = request.form.get("password")
 
     result = log_user_in(username, password)
     if result != "success":
+        logger.error("Log in attempt failed.")
         return render_template("login_error_page.html", error=result)
-    print("success")
+    logger.info("Successfully logged in.")
     return redirect(url_for("home"))
 
 @app.route("/sign_up_page", methods=["GET"])
@@ -283,12 +303,15 @@ def sign_up():
 
     result = signing_up(username, password, confirmed_password)
     if result != "success":
+        logger.error("Failed to create account.")
         return render_template("login_error_page.html", error=result)
+    logger.info("Successfully created an account.")
     return render_template("log_in.html")
 
 @app.route("/log_out")
 def log_out():
     log_user_out()
+    logger.info("Logged out.")
     return redirect(url_for("log_in_page"))
 
 @app.route("/settings_page")
@@ -331,12 +354,14 @@ def settings():
                     user["password_hash"] = hashed_password
                     file["userdata"][x] = user
                     save(file)
+                    logger.info("Successfully changed password.")
     if new_username:
         for x, user in enumerate(userdata):
             if user["username"] == session.get("username"):
                 user["username"] = new_username
                 file["userdata"][x] = user
                 save(file)
+                logger.info("Successfully changed username.")
     return redirect(url_for("home"))
 
 if __name__ == "__main__":
@@ -344,3 +369,5 @@ if __name__ == "__main__":
     start_backup()
     set_cookie_key()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+
+# TODO: Problem beim löschen, wahrscheinlich, wenn zwei Backups den selben Namen haben
