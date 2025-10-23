@@ -119,7 +119,7 @@
                     <!-- Name readonly oder hidden im Formular -->
                     <input type="hidden" id="originalName" name="original_name">
                     <div class="mb-3">
-                        <label for="editBackupName" class="form-label">Name (nicht änderbar)</label>
+                        <label for="editBackupName" class="form-label">Name (not editable)</label>
                         <input type="text" id="editBackupName" class="form-control" name="name" readonly>
                     </div>
                     <div class="mb-3">
@@ -255,7 +255,6 @@ header.appendChild(deleteBtn);
 
     for (const [key, value] of Object.entries(entry)) {
     if (key === 'name') continue;
-    if (key === 'backup_id') continue;
 
 
     const li = document.createElement('li');

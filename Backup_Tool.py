@@ -6,7 +6,7 @@ import logging
 import threading
 from app import app, socketio
 from flask import Flask, render_template, request, redirect, url_for, session
-from outsourced_functions import save, read, check_for_data_file
+from outsourced_functions import save, read, check_for_data_file, verify_user_access
 from lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
 from uuid import uuid4
 
@@ -25,9 +25,6 @@ file_handler.setFormatter(formatter)
 # Handler dem Logger hinzufügen
 logger.addHandler(file_handler)
 
-
-#def ignore_backup(dir, contents):
-#    return ['backup'] if 'backup' in contents else []
 
 def backup_folders(folder_to_backup, base_backup_dir):
     try:
@@ -137,12 +134,25 @@ def home():
     userdata = file["userdata"]
     visible_processes = []
     username = session.get("username")
-    for user in userdata:
-        if user["username"] == username:
-            for backup_process_id in user["backup_processes"]:
-                for backup in backup_paths:
-                    if backup["backup_id"] == backup_process_id:
-                        visible_processes.append(backup)
+    if not username:
+        return render_template("error_page.html", error="Unauthorized user. Try to log in again.")
+
+    found = False
+    try:
+        for user in userdata:
+            if user["username"] == username:
+                found = True
+                if user["backup_processes"]:
+                    for backup_process_id in user["backup_processes"]:
+                        for backup in backup_paths:
+                            if backup["backup_id"] == backup_process_id:
+                                visible_processes.append(backup)
+    except Exception as e:
+        return render_template("error_page.html", error=f"Internal server error: {e}")
+
+    if not found:
+        return render_template("error_page.html", error=f"User not found.")
+
     return render_template("index.html", backup_paths=visible_processes)
 
 @app.route("/create_backup_task", methods=["POST"])
@@ -153,6 +163,11 @@ def create_backup_task():
     folder_to_backup = request.form.get("folder_to_backup")
     folder_to_save_backup = request.form.get("folder_to_save_backup")
     backup_frequency = request.form.get("backup_frequency")
+
+    if not name or not username or not folder_to_backup or not folder_to_save_backup or not backup_frequency:
+        logger.error(f"Some input is missing in create_backup_task")
+        return render_template("error_page.html", error=f"Some input is missing in create_backup_task")
+
     backup_id = str(uuid4())
 
     folder_to_backup = folder_to_backup.replace('\\', '\\').strip('"').strip("'")
@@ -181,11 +196,17 @@ def create_backup_task():
     }
     file = read()
     userdata = file["userdata"]
-    for x, user in enumerate(userdata):
-        if user["username"] == username:
-            user["backup_processes"].append(backup_id)
-            file["userdata"][x] = user
-
+    found = False
+    try:
+        for x, user in enumerate(userdata):
+            if user["username"] == username:
+                found = True
+                user["backup_processes"].append(backup_id)
+                file["userdata"][x] = user
+    except Exception as e:
+        return render_template("error_page.html", error=f"Internal server error: {e}")
+    if not found:
+        return render_template("error_page.html", error=f"User not found.")
     file["backup_paths"].append(entry)
     save(file)
     logger.info("Successfully created backup process.")
@@ -194,11 +215,23 @@ def create_backup_task():
 @app.route("/edit_backup_task", methods=["POST"])
 @login_required
 def edit_backup_task():
+    username = session.get("username")
     name = request.form.get("name").strip('"').strip("'")
     folder_to_backup = request.form.get("folder_to_backup").strip('"').strip("'")
     folder_to_save_backup = request.form.get("folder_to_save_backup").strip('"').strip("'")
     backup_frequency = request.form.get("backup_frequency")
     backup_id = request.form.get("backup_id")
+
+    if not name or not folder_to_backup or not folder_to_save_backup or not backup_frequency or not backup_id or not username:
+        logger.error(f"Some input is missing in edit_backup_task.")
+        return render_template("error_page.html", error=f"Some input is missing in edit_backup_task.")
+
+    file = read()
+    result = verify_user_access(username, backup_id)
+
+    if not result:
+        return render_template("error_page.html", error=f"You are now allowed to access this backup process.")
+
     result_folder_to_backup = validate_filepath(folder_to_backup)
     result_folder_to_save_backup = validate_filepath(folder_to_save_backup)
 
@@ -209,9 +242,11 @@ def edit_backup_task():
         status_message = "Invalid file path"
         status = "stopped"
         logger.error("Invalid file path.")
-    file = read()
+
+    found = False
     for x, entry in enumerate(file["backup_paths"]):
         if entry["backup_id"] == backup_id:
+            found = True
             last_backup = entry["last_backup"]
             entry = {
                 "backup_id": backup_id,
@@ -227,6 +262,8 @@ def edit_backup_task():
             file["backup_paths"][x] = entry
             save(file)
             logger.info(f"Successfully edited backup {name}.")
+    if not found:
+        return render_template("error_page.html", error=f"Backup process not found.")
     return redirect(url_for("home"))
 
 @app.route("/delete_backup_task", methods=["POST"])
@@ -234,7 +271,18 @@ def edit_backup_task():
 def delete_backup_task():
     backup_id = request.form.get("backup_id")
     username = session.get("username")
+    if not backup_id or not username:
+        print("In if")
+        logger.error(f"Some input is missing in delete_backup_task.")
+        return render_template("error_page.html", error=f"Some input is missing in delete_backup_task.")
+
     file = read()
+
+    result = verify_user_access(username, backup_id)
+
+    if not result:
+        return render_template("error_page.html", error=f"You are now allowed to access this backup process.")
+
     for x, entry in enumerate(file["backup_paths"]):
         if entry["backup_id"] == backup_id:
             del file["backup_paths"][x]
@@ -251,10 +299,21 @@ def delete_backup_task():
 @app.route("/toggle_process_status", methods=["POST"])
 @login_required
 def toggle_process_status():
+    username = session.get("username")
     backup_id = request.form.get("backup_id")
+    if not backup_id or not username:
+        logger.error("Some inputs are missing or you tried to pause an stopped process in toggle_process_status. If the second option is true you have to solve the issue first (probably a wrong file path) before you are able, to pause/continue this process again.")
+        return render_template("error_page.html", error="Some inputs are missing in toggle_process_status.")
+
     file = read()
+    result = verify_user_access(username, backup_id)
+    if not result:
+        return render_template("error_page.html", error=f"You are now allowed to access this backup process.")
+    found = False
+
     for x, entry in enumerate(file["backup_paths"]):
         if entry["backup_id"] == backup_id:
+            found = True
             if entry["status"] != "stopped":
                 if entry["status"] == "running":
                     entry["status"] = "paused"
@@ -267,6 +326,10 @@ def toggle_process_status():
             else:
                 logger.error(f"Process {entry["name"]} can't resumed, because there is an unknown error.")
             break
+
+    if not found:
+        return render_template("error_page.html", error=f"Backup process not found.")
+
     return redirect(url_for("home"))
 
 @app.route("/log_in_page")
@@ -284,10 +347,14 @@ def log_in():
     username = request.form.get("username")
     password = request.form.get("password")
 
+    if not username or not password:
+        logger.error("Some input is missing in log_in.")
+        return render_template("error_page.html", error="Some input is missing in log_in.")
+
     result = log_user_in(username, password)
     if result != "success":
         logger.error("Log in attempt failed.")
-        return render_template("login_error_page.html", error=result)
+        return render_template("error_page.html", error=result)
     logger.info("Successfully logged in.")
     return redirect(url_for("home"))
 
@@ -301,10 +368,14 @@ def sign_up():
     password = request.form.get("password")
     confirmed_password = request.form.get("confirm_password")
 
+    if not username or not password or not confirmed_password:
+        logger.error("Some input is missing in sign_up.")
+        return render_template("error_page.html", error="Some input is missing in sign_up.")
+
     result = signing_up(username, password, confirmed_password)
     if result != "success":
         logger.error("Failed to create account.")
-        return render_template("login_error_page.html", error=result)
+        return render_template("error_page.html", error=result)
     logger.info("Successfully created an account.")
     return render_template("log_in.html")
 
@@ -319,13 +390,23 @@ def settings_page():
     file = read()
     userdata = file["userdata"]
     username = session.get("username")
+
+    if not username:
+        logger.error("Some input is missing in settings_page.")
+        return render_template("error_page.html", error="Some input is missing in settings_page.")
+
     admin = False
+    found = False
     for user in userdata:
         if user["username"] == username:
+            found = True
             if user["rank"] == "admin":
                 admin = True
             else:
                 admin = False
+    if not found:
+        return render_template("error_page.html", error=f"User not found.")
+
     if admin:
         users = []
         for user in userdata:
@@ -340,11 +421,18 @@ def settings():
     confirmed_password = request.form.get("confirmed_password")
     username = session.get("username")
     new_username = request.form.get("new_username")
+
+    if not username or not password or not confirmed_password or not new_username:
+        logger.error("Some input is missing in settings.")
+        return render_template("error_page.html", error="Some input is missing in settings.")
+
     file = read()
     userdata = file["userdata"]
     if password and confirmed_password:
+        found = False
         for x, user in enumerate(userdata):
-            if user["username"] == session.get("username"):
+            if user["username"] == username:
+                found = True
                 salt = user["salt"]
                 if not salt:
                     return render_template("login_error_page", error="No salt found.")
@@ -355,13 +443,21 @@ def settings():
                     file["userdata"][x] = user
                     save(file)
                     logger.info("Successfully changed password.")
+        if not found:
+            return render_template("error_page.html", error=f"User not found.")
+
     if new_username:
+        found = False
         for x, user in enumerate(userdata):
-            if user["username"] == session.get("username"):
+            if user["username"] == username:
+                found = True
                 user["username"] = new_username
                 file["userdata"][x] = user
                 save(file)
                 logger.info("Successfully changed username.")
+        if not found:
+            return render_template("error_page.html", error=f"User not found.")
+
     return redirect(url_for("home"))
 
 if __name__ == "__main__":
@@ -369,5 +465,3 @@ if __name__ == "__main__":
     start_backup()
     set_cookie_key()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
-
-# TODO: Problem beim löschen, wahrscheinlich, wenn zwei Backups den selben Namen haben
