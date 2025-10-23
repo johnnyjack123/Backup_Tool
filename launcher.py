@@ -10,7 +10,7 @@ from program_files.outsourced_functions import read, check_for_data_file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 python_script = os.path.join(BASE_DIR, "program_files", "yt_dlp_backend.py")
-url_version = "https://raw.githubusercontent.com/johnnyjack123/YouTube_Downloader/refs/heads/master/program_files/version.txt"
+url_version = "https://raw.githubusercontent.com/johnnyjack123/Backup_Tool/refs/heads/master/program_files/version.txt"
 new_version = os.path.join(BASE_DIR, "tmp", "newest_version.txt")
 old_version = os.path.join(BASE_DIR, "program_files", "version.txt")
 
