@@ -1,9 +1,9 @@
 import hashlib
 import os
-from app import app
-from outsourced_functions import read, save
+from program_files.app import app
+from program_files.outsourced_functions import read, save
 from functools import wraps
-from flask import redirect, url_for, session, request
+from flask import redirect, url_for, session
 from uuid import uuid4
 
 

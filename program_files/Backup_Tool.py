@@ -4,10 +4,10 @@ import shutil
 import time
 import logging
 import threading
-from app import app, socketio
-from flask import Flask, render_template, request, redirect, url_for, session
-from outsourced_functions import save, read, check_for_data_file, verify_user_access
-from lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
+from program_files.app import app, socketio
+from flask import render_template, request, redirect, url_for, session
+from program_files.outsourced_functions import save, read, check_for_data_file, verify_user_access
+from program_files.lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
 from uuid import uuid4
 
 # Eigenen Logger erstellen
@@ -15,7 +15,7 @@ logger = logging.getLogger("my_backup_logger")
 logger.setLevel(logging.INFO)
 
 # File Handler für Datei-Ausgabe konfigurieren
-file_handler = logging.FileHandler("backup_tool.log")
+file_handler = logging.FileHandler("../backup_tool.log")
 file_handler.setLevel(logging.INFO)
 
 # Format für Logs definieren

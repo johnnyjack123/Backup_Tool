@@ -1,5 +1,5 @@
 import json
-import global_variables
+import program_files.global_variables as global_variables
 from flask import render_template
 data_file_path = global_variables.data_file_path
 
@@ -27,7 +27,10 @@ def check_for_data_file():
         default_content = {
             "backup_paths": [],
             "userdata": [],
-            "server_data": {}
+            "server_data": {
+                "cookie_key": "",
+                "auto_update": "yes"
+            }
         }
         with open(data_file_path, 'w', encoding='utf-8') as f:
             json.dump(default_content, f, indent=4)
