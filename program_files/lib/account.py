@@ -5,6 +5,7 @@ from program_files.outsourced_functions import read, save
 from functools import wraps
 from flask import redirect, url_for, session
 from uuid import uuid4
+import program_files.global_variables as global_variables
 
 
 def set_cookie_key():
@@ -35,14 +36,11 @@ def validate_passwords(password, confirmed_password, salt, username, mode):
     hashed_password = hashlib.sha256((str(password) + salt).encode()).hexdigest()
     hashed_confirmed_password = hashlib.sha256((str(confirmed_password) + salt).encode()).hexdigest()
     success = False
-    print(username)
     if hashed_password != hashed_confirmed_password:
         return "No password match or username already exists.", success
     if mode != "password only":
         for user in userdata:
             if username == user["username"]:
-                print(f"Username function: {username}, username file {user["username"]}")
-                print("user already exists")
                 return "No password match or username already exists.", success
         if username is None or username == "None":
             return "Username None is not available", success
@@ -81,21 +79,20 @@ def signing_up(username, password, confirmed_password):
     userdata = file["userdata"]
     salt = os.urandom(32).hex()
     hashed_password, success = validate_passwords(password, confirmed_password, salt, username, "whole validation")
-    print(f"hashed password {hashed_password}")
     user_id = str(uuid4())
     if success:
         if not userdata:
             rank = "admin"
         else:
             rank = "user"
-        entry = {
-            "user_id": user_id,
-            "username": username,
-            "password_hash": hashed_password,
-            "salt": salt,
-            "rank": rank,
-            "backup_processes": []
-        }
+
+        entry = global_variables.userdata_dict
+        entry["user_id"] = user_id
+        entry["username"] = username
+        entry["password_hash"] = hashed_password
+        entry["salt"] = salt
+        entry["rank"] = rank
+
         userdata.append(entry)
         file["userdata"] = userdata
         save(file)

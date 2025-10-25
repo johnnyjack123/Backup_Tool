@@ -6,17 +6,18 @@ import logging
 import threading
 from program_files.app import app, socketio
 from flask import render_template, request, redirect, url_for, session
-from program_files.outsourced_functions import save, read, check_for_data_file, verify_user_access, delete_backup, check_rank
+from program_files.outsourced_functions import save, read, check_for_data_file, verify_user_access, delete_backup, check_rank, migrate_config
 from program_files.lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
 from uuid import uuid4
 import os
+import program_files.global_variables as global_variables
 
 # Eigenen Logger erstellen
 logger = logging.getLogger("my_backup_logger")
 logger.setLevel(logging.INFO)
 
 # File Handler für Datei-Ausgabe konfigurieren
-file_handler = logging.FileHandler("../backup_tool.log")
+file_handler = logging.FileHandler("backup_tool.log")
 file_handler.setLevel(logging.INFO)
 
 # Format für Logs definieren
@@ -190,17 +191,16 @@ def create_backup_task():
         status = "stopped"
         logger.error("Invalid file path.")
 
-    entry = {
-        "backup_id": backup_id,
-        "folder_to_backup": folder_to_backup,
-        "folder_to_save_backup": folder_to_save_backup,
-        "name": name,
-        "last_backup": "",
-        "backup_frequency": int(backup_frequency),
-        "status_message": status_message,
-        "status": status,
-        "version_history_length": version_history_length
-    }
+    entry = global_variables.backup_process_dict
+    entry["backup_id"] = backup_id
+    entry["folder_to_backup"] = folder_to_backup
+    entry["folder_to_save_backup"] = folder_to_save_backup
+    entry["name"] = name
+    entry["backup_frequency"] = int(backup_frequency)
+    entry["status_message"] = status_message
+    entry["status"] = status
+    entry["version_history_length"] = int(version_history_length)
+
     file = read()
     userdata = file["userdata"]
     found = False
@@ -230,7 +230,7 @@ def edit_backup_task():
     backup_id = request.form.get("backup_id")
     version_history_length = request.form.get("version_history_length")
 
-    if not name or not folder_to_backup or not folder_to_save_backup or not backup_frequency or not backup_id or not username:
+    if not name or not folder_to_backup or not folder_to_save_backup or not backup_frequency or not backup_id or not username or not backup_id or not version_history_length:
         logger.error(f"Some input is missing in edit_backup_task.")
         return render_template("error_page.html", error=f"Some input is missing in edit_backup_task.")
 
@@ -256,17 +256,17 @@ def edit_backup_task():
         if entry["backup_id"] == backup_id:
             found = True
             last_backup = entry["last_backup"]
-            entry = {
-                "backup_id": backup_id,
-                "folder_to_backup": folder_to_backup,
-                "folder_to_save_backup": folder_to_save_backup,
-                "name": name,
-                "last_backup": last_backup,
-                "backup_frequency": int(backup_frequency),
-                "status_message": status_message,
-                "status": status,
-                "version_history_length": version_history_length
-            }
+
+            entry = global_variables.backup_process_dict
+            entry["backup_id"] = backup_id
+            entry["folder_to_backup"] = folder_to_backup
+            entry["folder_to_save_backup"] = folder_to_save_backup
+            entry["name"] = name
+            entry["last_backup"] = last_backup
+            entry["backup_frequency"] = backup_frequency
+            entry["status_message"] = status_message
+            entry["status"] = status
+            entry["version_history_length"] = version_history_length
 
             file["backup_paths"][x] = entry
             save(file)
@@ -490,6 +490,7 @@ def settings():
 
 if __name__ == "__main__":
     check_for_data_file()
+    config = migrate_config(global_variables.data_file_path)
     start_backup()
     set_cookie_key()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
