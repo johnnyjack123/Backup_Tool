@@ -15,13 +15,10 @@ backup_process_dict = {
     }
 
 data_file_dict = {
-            "backup_paths": [],
-            "userdata": [],
-            "server_data": {
                 "cookie_key": "",
                 "auto_update": "yes"
             }
-        }
+
 
 userdata_dict = {
             "user_id": "",

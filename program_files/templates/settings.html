@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>
-        Account Settings
-    </title>
+    <title>Account Settings</title>
     <!-- Bootswatch Darkly Theme -->
     <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.1/dist/darkly/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -18,16 +16,12 @@
     <!-- Header -->
     <div class="d-flex align-items-center mb-4" style="gap: 1rem">
         <a href="{{ url_for('home') }}" class="btn btn-outline-danger">Back</a>
-
-        <h1 class="m-0">
-            Account Settings
-        </h1>
-
+        <h1 class="m-0">Account Settings</h1>
     </div>
 
     <!-- Manage User Button -->
     <hr class="my-4">
-    <form action="{{ url_for('settings') }}" method="POST" class="mx-auto">
+    <form action="{{ url_for('settings') }}" method="POST" class="mx-auto" id="settingsForm">
         <h3 class="text-center mb-4">Edit userdata</h3>
         <div class="mb-3">
             <input type="text"
@@ -37,24 +31,27 @@
         </div>
         <div class="mb-3">
             <input type="password"
+                   id="password"
                    name="password"
                    class="form-control bg-secondary border-dark text-light"
                    placeholder="Enter new password. Leave empty if you wont change.">
         </div>
         <div class="mb-3">
             <input type="password"
+                   id="confirmed_password"
                    name="confirmed_password"
                    class="form-control bg-secondary border-dark text-light"
                    placeholder="Confirm new password. Leave empty if you wont change.">
         </div>
 
         {% if users %}
-            <hr class="my-4">
+        <hr class="my-4">
 
         <h3 class="text-center mb-4">Add new user</h3>
 
         <div class="mb-3">
             <input type="text"
+                   id="add_user_name"
                    name="add_user_name"
                    class="form-control bg-secondary border-dark text-light"
                    placeholder="Add username. Leave empty if you wont change.">
@@ -62,36 +59,32 @@
 
         <div class="mb-3">
             <input type="password"
+                   id="add_user_password"
                    name="add_user_password"
                    class="form-control bg-secondary border-dark text-light"
-                   placeholder="Enter new password for the new user.">
+                   placeholder="Enter new password for the new user."
+                   disabled>
         </div>
         <div class="mb-3">
             <input type="password"
+                   id="add_user_confirmed_password"
                    name="add_user_confirmed_password"
                    class="form-control bg-secondary border-dark text-light"
-                   placeholder="Confirm new password for the new user">
+                   placeholder="Confirm new password for the new user"
+                   disabled>
         </div>
         {% endif %}
         <div class="d-flex justify-content-center">
-            <input
-                    type="submit"
-                    class="btn btn-info text-white w-100"
-                    value="Submit">
+            <input type="submit" class="btn btn-info text-white w-100" value="Submit">
         </div>
-
     </form>
-    <hr class="my-4">
-            <h3 class="text-center mb-4">Log out</h3>
 
+    <hr class="my-4">
+    <h3 class="text-center mb-4">Log out</h3>
     <div class="d-flex align-items-center mb-4" style="gap: 1rem">
-        <a href="{{ url_for('log_out') }}"
-           data-bs-toggle="tooltip"
-           data-bs-title="Log out"
-           class="btn btn-info w-100">
-            Log out
-        </a>
+        <a href="{{ url_for('log_out') }}" class="btn btn-info w-100">Log out</a>
     </div>
+
     {% if users %}
     <hr class="my-4">
     <h3 class="text-center mb-4">Logged in users</h3>
@@ -101,10 +94,71 @@
             {{ user }}
         </li>
     </ul>
-
-
     {% endfor %}
     {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Edit User Password ---
+    const password = document.getElementById('password');
+    const confirmPassword = document.getElementById('confirmed_password');
+
+    function checkPasswordMatch() {
+        if (password.value && confirmPassword.value && password.value !== confirmPassword.value) {
+            confirmPassword.setCustomValidity('Passwords do not match');
+        } else {
+            confirmPassword.setCustomValidity('');
+        }
+    }
+
+    password.addEventListener('input', () => {
+        if (password.value) {
+            confirmPassword.required = true;
+        } else {
+            confirmPassword.required = false;
+            confirmPassword.setCustomValidity('');
+        }
+    });
+
+    confirmPassword.addEventListener('input', checkPasswordMatch);
+    password.addEventListener('input', checkPasswordMatch);
+
+    // --- Add User Section ---
+    const addUserName = document.getElementById('add_user_name');
+    const addUserPassword = document.getElementById('add_user_password');
+    const addUserConfirm = document.getElementById('add_user_confirmed_password');
+
+    function toggleAddUserFields() {
+        const hasName = addUserName.value.trim() !== '';
+        addUserPassword.disabled = !hasName;
+        addUserConfirm.disabled = !hasName;
+        addUserPassword.required = hasName;
+        addUserConfirm.required = hasName;
+
+        if (!hasName) {
+            addUserPassword.value = '';
+            addUserConfirm.value = '';
+            addUserConfirm.setCustomValidity('');
+        }
+    }
+
+    function checkAddUserPasswordMatch() {
+        if (addUserPassword.value && addUserConfirm.value && addUserPassword.value !== addUserConfirm.value) {
+            addUserConfirm.setCustomValidity('Passwords do not match');
+        } else {
+            addUserConfirm.setCustomValidity('');
+        }
+    }
+
+    addUserName.addEventListener('input', toggleAddUserFields);
+    addUserPassword.addEventListener('input', checkAddUserPasswordMatch);
+    addUserConfirm.addEventListener('input', checkAddUserPasswordMatch);
+
+    // Initial state
+    toggleAddUserFields();
+});
+</script>
+
 </body>
 </html>

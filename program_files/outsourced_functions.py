@@ -3,7 +3,8 @@ import program_files.global_variables as global_variables
 from flask import render_template, session
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+
+count = 0
 
 data_file_path = global_variables.data_file_path
 
@@ -14,7 +15,7 @@ def save(data):
             json.dump(data, file, ensure_ascii=False, indent=4)
         return True
     except Exception as e:
-        return render_template("error_page.html", error=f"Error in reading file: {e}")
+        print("Can´t open data.json file.")
 
 def read():
     global data_file_path
@@ -23,12 +24,15 @@ def read():
             data = json.load(file)
             return data
     except Exception as e:
-        return render_template("error_page.html", error=f"Error in reading file: {e}")
+        print("Can´t open data.json file.")
 
 def check_for_data_file():
     global data_file_path
     if not data_file_path.exists():
-        default_content = global_variables.data_file_dict
+        default_content = {
+            "backup_paths": [],
+            "userdata": [],
+            "server_data": global_variables.data_file_dict}
         with open(data_file_path, 'w', encoding='utf-8') as f:
             json.dump(default_content, f, indent=4)
 
@@ -85,9 +89,11 @@ def check_rank(username, userdata):
 
 def deep_update_with_defaults(entry: dict, defaults: dict) -> dict:
     """Rekursiv Defaults in Entry mergen, ohne bestehende Werte zu überschreiben."""
+    global count
     for key, default_value in defaults.items():
         if key not in entry:
             entry[key] = default_value
+            count += 1
         elif isinstance(default_value, dict) and isinstance(entry[key], dict):
             deep_update_with_defaults(entry[key], default_value)
     return entry
@@ -99,18 +105,17 @@ def update_config_with_defaults(data: dict, defaults: dict) -> dict:
     - Listen (z. B. userdata, backup_paths) werden über alle Einträge gemerged
     - Dicts (z. B. server_data) werden rekursiv zusammengeführt
     """
+    global count
     for key, default_schema in defaults.items():
         if key not in data:
             data[key] = default_schema
+            count += 1
         elif isinstance(data[key], list) and isinstance(default_schema, dict):
             for entry in data[key]:
                 deep_update_with_defaults(entry, default_schema)
         elif isinstance(data[key], dict) and isinstance(default_schema, dict):
             deep_update_with_defaults(data[key], default_schema)
     return data
-
-
-# === Nutzung ===
 
 def migrate_config(config_path: str):
     """Lädt Config, migriert sie und speichert sie zurück"""
@@ -133,5 +138,6 @@ def migrate_config(config_path: str):
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(updated_data, f, indent=4, ensure_ascii=False)
 
-    print("✓ Config erfolgreich migriert!")
+    if count > 0:
+        print(f"File successfully merged. {count} entries changed.")
     return updated_data
