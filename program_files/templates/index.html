@@ -61,14 +61,16 @@
             <form action="{{ url_for('create_backup_task') }}" method="POST">
                 <div class="modal-header">
                     <h5 class="modal-title" id="addBackupLabel">Create new backup rule</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Schließen"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                            aria-label="Schließen"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label" for="backupName">Name</label>
                         <input type="text" class="form-control" id="backupName" name="name"
                                placeholder="Choose a unique name" required>
-                        <div id="nameError" class="form-text text-danger" style="display:none;">Name already exists!</div>
+                        <div id="nameError" class="form-text text-danger" style="display:none;">Name already exists!
+                        </div>
                     </div>
 
                     <div class="mb-3">
@@ -77,15 +79,26 @@
                                placeholder="Copy path" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label" for="backupSavePath">Path to the folder where the backup is going to be stored.</label>
+                        <label class="form-label" for="backupSavePath">Path to the folder where the backup is going to
+                            be stored.</label>
                         <input type="text" class="form-control" id="backupSavePath" name="folder_to_save_backup"
                                placeholder="Copy path" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label" for="backupFrequency">Backup frequency in hours</label>
-                        <input type="number" class="form-control" id="backupFrequency" name="backup_frequency" min="1" step="1" required
+                        <input type="number" class="form-control" id="backupFrequency" name="backup_frequency" min="1"
+                               step="1" required
                                oninput="this.value = this.value.replace(/[^0-9]/g, ''); if(this.value < 1) this.value = 1;"
                                placeholder="Only values larger than 1 possible">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="storedVersions">Number of maximum stored versions until the
+                            oldest get deleted. 0 disables this feature and your version history never gets
+                            deleted.</label>
+                        <input type="number" class="form-control" id="storedVersions" name="version_history_length"
+                               min="0" step="1" required
+                               oninput="this.value = this.value.replace(/[^0-9]/g, ''); if(this.value < 0) this.value = 0;"
+                               placeholder="Only values larger than 0 possible">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -123,24 +136,36 @@
                         <input type="text" id="editBackupName" class="form-control" name="name" readonly>
                     </div>
                     <div class="mb-3">
-                        <label for="editBackupPath" class="form-label">Path to the folder which is going to back up.</label>
+                        <label for="editBackupPath" class="form-label">Path to the folder which is going to back
+                            up.</label>
                         <input type="text" id="editBackupPath" class="form-control" name="folder_to_backup" required>
                     </div>
                     <div class="mb-3">
-                        <label for="editBackupSavePath" class="form-label">Path to the folder where the backup is going to be stored.</label>
-                        <input type="text" id="editBackupSavePath" class="form-control" name="folder_to_save_backup" required>
+                        <label for="editBackupSavePath" class="form-label">Path to the folder where the backup is going
+                            to be stored.</label>
+                        <input type="text" id="editBackupSavePath" class="form-control" name="folder_to_save_backup"
+                               required>
                     </div>
                     <div class="mb-3">
                         <label for="editBackupFrequency" class="form-label">Backup frequency in hours</label>
                         <input
-                            type="number"
-                            class="form-control"
-                            id="editBackupFrequency"
-                            name="backup_frequency"
-                            min="1"
-                            step="1"
-                            required
-                            oninput="this.value = this.value.replace(/[^0-9]/g, ''); if(this.value < 1) this.value = 1;">
+                                type="number"
+                                class="form-control"
+                                id="editBackupFrequency"
+                                name="backup_frequency"
+                                min="1"
+                                step="1"
+                                required
+                                oninput="this.value = this.value.replace(/[^0-9]/g, ''); if(this.value < 1) this.value = 1;">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="editStoredVersions">Number of maximum stored versions until the
+                            oldest get deleted. 0 disables this feature and your version history never gets
+                            deleted.</label>
+                        <input type="number" class="form-control" id="editStoredVersions" name="version_history_length"
+                               min="0" step="1" required
+                               oninput="this.value = this.value.replace(/[^0-9]/g, ''); if(this.value < 0) this.value = 0;"
+                               placeholder="Only values larger than 0 possible">
                     </div>
                     <input type="hidden" id="editBackupId" name="backup_id">
 
@@ -166,7 +191,9 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure to delete the backup process <strong id="deleteBackupNameText"></strong>? All of your existing version created by this process are still storaged on your device after this action. This action can´t be undone.</p>
+                    <p>Are you sure to delete the backup process <strong id="deleteBackupNameText"></strong>? All of
+                        your existing version created by this process are still storaged on your device after this
+                        action. This action can´t be undone.</p>
                 </div>
 
                 <div class="modal-footer">
@@ -179,7 +206,9 @@
 </div>
 
 <form id="toggleProcessForm" action="{{ url_for('toggle_process_status') }}" method="POST" style="display:none;">
-  <input type="hidden" id="toggleProcessName" name="name">
+    <input type="hidden" id="toggleProcessName" name="name">
+    <input type="hidden" id="toggleBackupId" name="backup_id">
+
 </form>
 
 <!-- Bootstrap JS -->
@@ -199,7 +228,8 @@ const keyReplacements = {
     'backup_frequency': 'Backup frequency in hours',
     'last_backup': 'Last Backup',
     'status': 'Status',
-    'status_message': 'Status Message'
+    'status_message': 'Status Message',
+    'version_history_length': 'Number of max. stored backups'
 };
 
 // Backup Karten erzeugen mit keyReplacement
@@ -241,6 +271,8 @@ toggleBtn.textContent = (entry.status === 'paused') ? 'Continue' : 'Pause';
 toggleBtn.addEventListener('click', () => {
     // Hidden input mit Namen befüllen
     document.getElementById('toggleProcessName').value = entry.name;
+        document.getElementById('toggleBackupId').value = entry.backup_id;
+
     // Formular absenden (z.B. per POST zu /toggle_process)
     document.getElementById('toggleProcessForm').submit();
 });
@@ -300,6 +332,7 @@ header.appendChild(deleteBtn);
     document.getElementById('editBackupSavePath').value = entry.folder_to_save_backup || '';
     document.getElementById('editBackupFrequency').value = entry.backup_frequency || '';
     document.getElementById('originalName').value = entry.name;
+    document.getElementById('editStoredVersions').value = entry.version_history_length;
 
     document.getElementById('editBackupId').value = entry.backup_id || '';
 
@@ -356,7 +389,6 @@ nameInput.addEventListener('input', () => {
         }
     });
 });
-
 
 
 </script>

@@ -17,7 +17,7 @@
 
     <!-- Header -->
     <div class="d-flex align-items-center mb-4" style="gap: 1rem">
-                      <a href="{{ url_for('home') }}" class="btn btn-outline-danger">Back</a>
+        <a href="{{ url_for('home') }}" class="btn btn-outline-danger">Back</a>
 
         <h1 class="m-0">
             Account Settings
@@ -48,6 +48,31 @@
                    placeholder="Confirm new password. Leave empty if you wont change.">
         </div>
 
+        {% if users %}
+            <hr class="my-4">
+
+        <h3 class="text-center mb-4">Add new user</h3>
+
+        <div class="mb-3">
+            <input type="text"
+                   name="add_user_name"
+                   class="form-control bg-secondary border-dark text-light"
+                   placeholder="Add username. Leave empty if you wont change.">
+        </div>
+
+        <div class="mb-3">
+            <input type="password"
+                   name="add_user_password"
+                   class="form-control bg-secondary border-dark text-light"
+                   placeholder="Enter new password for the new user.">
+        </div>
+        <div class="mb-3">
+            <input type="password"
+                   name="add_user_confirmed_password"
+                   class="form-control bg-secondary border-dark text-light"
+                   placeholder="Confirm new password for the new user">
+        </div>
+        {% endif %}
         <div class="d-flex justify-content-center">
             <input
                     type="submit"
@@ -57,6 +82,8 @@
 
     </form>
     <hr class="my-4">
+            <h3 class="text-center mb-4">Log out</h3>
+
     <div class="d-flex align-items-center mb-4" style="gap: 1rem">
         <a href="{{ url_for('log_out') }}"
            data-bs-toggle="tooltip"
@@ -66,14 +93,14 @@
         </a>
     </div>
     {% if users %}
-        <hr class="my-4">
-        <h3 class="text-center mb-4">Logged in users</h3>
+    <hr class="my-4">
+    <h3 class="text-center mb-4">Logged in users</h3>
     {% for user in users %}
-        <ul class="d-flex align-items-center mb-4" style="gap: 1rem; list-style: none; padding-left: 0;">
-  <li class="border rounded px-3 py-1 bg-secondary text-light">
-    {{ user }}
-  </li>
-</ul>
+    <ul class="d-flex align-items-center mb-4" style="gap: 1rem; list-style: none; padding-left: 0;">
+        <li class="border rounded px-3 py-1 bg-secondary text-light">
+            {{ user }}
+        </li>
+    </ul>
 
 
     {% endfor %}
