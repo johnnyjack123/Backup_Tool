@@ -1,8 +1,5 @@
 import json
 import program_files.global_variables as global_variables
-from flask import render_template, session
-import shutil
-from pathlib import Path
 
 count = 0
 
@@ -31,6 +28,7 @@ def check_for_data_file():
     if not data_file_path.exists():
         default_content = {
             "backup_paths": [],
+            "scheduled_scripts": [],
             "userdata": [],
             "server_data": global_variables.data_file_dict}
         with open(data_file_path, 'w', encoding='utf-8') as f:
@@ -54,25 +52,6 @@ def sort_folders(folder_to_save_backup):
     print(f"Total files: {files}")
     sorted_files = sorted(files, key=lambda f: f.name)
     return sorted_files
-
-def delete_backup(folder_to_save_backup, version_history_length):
-    print("Delete Backup")
-    sorted_files = sort_folders(folder_to_save_backup)
-    print(f"folder to save backup: {folder_to_save_backup}")
-    print(f"sortet files: {sorted_files}")
-    x = True
-    delete = False
-    print(f"Number of files: {len(sorted_files)}")
-    while x:
-        if len(sorted_files) > int(version_history_length):
-            folder_to_delete = sorted_files.pop(0).name
-            backup_folder = Path(folder_to_save_backup)
-            absolute_path = backup_folder / folder_to_delete
-            shutil.rmtree(absolute_path)
-            delete = True
-        else:
-            x = False
-    return delete
 
 def check_rank(username, userdata):
     admin = False
@@ -123,6 +102,7 @@ def migrate_config(config_path: str):
     # Defaults zusammenstellen
     defaults = {
         "backup_paths": global_variables.backup_process_dict,
+        "scheduled_scripts": global_variables.scheduled_scripts_dict,
         "userdata": global_variables.userdata_dict,
         "server_data": global_variables.data_file_dict
     }

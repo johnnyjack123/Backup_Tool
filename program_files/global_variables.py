@@ -28,3 +28,13 @@ userdata_dict = {
             "rank": "user",
             "backup_processes": []
         }
+
+scheduled_scripts_dict = {
+        "script_id": "",
+        "script_path": "",
+        "name": "",
+        "last_execution": "",
+        "execution_frequency": 24,
+        "status_message": "",
+        "status": ""
+}

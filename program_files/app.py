@@ -1,9 +1,9 @@
-import eventlet
+#import eventlet
 import eventlet.wsgi
-eventlet.monkey_patch()
+#eventlet.monkey_patch()
 
 from flask import Flask
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet')
+socketio = SocketIO(app, async_mode='threading')

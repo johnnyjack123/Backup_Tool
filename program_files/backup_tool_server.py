@@ -1,125 +1,13 @@
-from datetime import datetime, timedelta
 from pathlib import Path
-import shutil
 import time
-import logging
-import threading
 from program_files.app import app, socketio
 from flask import render_template, request, redirect, url_for, session
 from program_files.outsourced_functions import save, read, check_for_data_file, verify_user_access, delete_backup, check_rank, migrate_config
 from program_files.lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
 from uuid import uuid4
-import os
 import program_files.global_variables as global_variables
-
-# Eigenen Logger erstellen
-logger = logging.getLogger("my_backup_logger")
-logger.setLevel(logging.INFO)
-
-# File Handler für Datei-Ausgabe konfigurieren
-file_handler = logging.FileHandler("backup_tool.log")
-file_handler.setLevel(logging.INFO)
-
-# Format für Logs definieren
-formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", "%Y-%m-%d %H:%M:%S")
-file_handler.setFormatter(formatter)
-
-# Handler dem Logger hinzufügen
-logger.addHandler(file_handler)
-
-
-def backup_folders(folder_to_backup, base_backup_dir):
-    try:
-        folder_to_backup = Path(folder_to_backup).resolve()
-        base_backup_dir = Path(base_backup_dir).resolve()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        folder_to_save_backup = base_backup_dir / f"backup_{timestamp}"
-        folder_to_save_backup = folder_to_save_backup.resolve()
-
-        # Ignorierfunktion, die den Ordner zum Speichern ggf. ausschließt
-        def ignore_backup(current_dir, contents):
-            ignored = []
-            for item in contents:
-                item_path = Path(current_dir) / item
-                # Prüfe, ob item_path der Zielordner ist oder darin liegt
-                if folder_to_save_backup == item_path.resolve() or folder_to_save_backup.is_relative_to(item_path.resolve()):
-                    ignored.append(item)
-            return ignored
-
-        shutil.copytree(src=str(folder_to_backup), dst=str(folder_to_save_backup), ignore=ignore_backup)
-        logger.info("Successfully stored backup.")
-        return True
-    except Exception as e:
-        logger.info(f"Error by backup: {e}")
-        return False
-
-def check_for_backup():
-    while True:
-        file = read()
-        now = datetime.now()
-        backup_paths = file["backup_paths"]
-        if backup_paths:
-            for entry, backup in enumerate(backup_paths):
-                status = backup["status"]
-                if status == "running":
-                    last_backup = backup["last_backup"]
-                    if last_backup:
-                        backup_frequency = int(backup["backup_frequency"])
-                        if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
-                            folder_to_backup = Path(backup["folder_to_backup"])
-                            folder_to_save_backup = Path(backup["folder_to_save_backup"])
-                            result = backup_folders(folder_to_backup, folder_to_save_backup)
-                            if not result:
-                                status_message = f"Error in process {backup["name"]}. See logs for more detailed error message."
-                                backup["status_message"] = status_message
-                            else:
-                                status_message = "ok"
-                                result_delete = delete_backup(folder_to_save_backup, backup["version_history_length"])
-
-                                if result_delete:
-                                    logger.info(f"Successfully deleted the oldest backup version of {backup["name"]}.")
-
-                            socketio.emit('status_update', {'name': backup["name"], 'status_message': status_message})
-                            file["backup_paths"][entry]["status_message"] = status_message
-                            file["backup_paths"][entry]["last_backup"] = now.isoformat()
-                            save(file)
-                            update_backup_times()
-                    else:
-                        file["backup_paths"][entry]["last_backup"] = now.isoformat()
-                        save(file)
-                        folder_to_backup = backup["folder_to_backup"]
-                        folder_to_save_backup = backup["folder_to_save_backup"]
-                        result = backup_folders(folder_to_backup, folder_to_save_backup)
-                        if not result:
-                            status_message = f"Error in process {backup["name"]}. See logs for more detailed error message."
-                            backup["status_message"] = status_message
-                        else:
-                            status_message = "ok"
-
-                        socketio.emit('status_update', {'name': backup["name"], 'status_message': status_message})
-                        file["backup_paths"][entry]["status_message"] = status_message
-                        save(file)
-                        update_backup_times()
-                else:
-                    continue
-
-            time.sleep(60)
-        else:
-            time.sleep(5)
-
-def start_backup():
-    thread = threading.Thread(target=check_for_backup, daemon=True)
-    thread.start()
-
-def update_backup_times():
-    file = read()
-    backup_paths = file["backup_paths"]
-    backup_times = []
-    for entry in backup_paths:
-        content = {"name": entry["name"],
-                   "last_backup": entry["last_backup"]}
-        backup_times.append(content)
-    socketio.emit('backup_time_update', backup_times)
+from program_files.logger import logger
+from program_files.backup import update_backup_times
 
 def validate_filepath(path):
     path = Path(path)
@@ -174,6 +62,14 @@ def create_backup_task():
     if not name or not username or not folder_to_backup or not folder_to_save_backup or not backup_frequency or not version_history_length:
         logger.error(f"Some input is missing in create_backup_task")
         return render_template("error_page.html", error=f"Some input is missing in create_backup_task")
+
+    home_folder = Path.home()
+    if folder_to_backup.startswith("~"):
+
+        folder_to_backup.replace("~", str(home_folder))
+
+    if folder_to_save_backup.startswith("~"):
+        folder_to_save_backup.replace("~", str(home_folder))
 
     backup_id = str(uuid4())
 
