@@ -2,49 +2,20 @@ import json
 import program_files.global_variables as global_variables
 from pathlib import Path
 from uuid import uuid4
-from logger import logger
+from program_files.logger import logger
+from file_handler import load_file, save_file
 
 count = 0
 
-data_file_path = global_variables.data_file_path
-
-def save(data):
-    global data_file_path
-    try:
-        with open(data_file_path, "w", encoding="utf-8") as file:
-            json.dump(data, file, ensure_ascii=False, indent=4)
-        return True
-    except Exception as e:
-        print("Can´t open data.json file.")
-
-def read():
-    global data_file_path
-    try:
-        with open(data_file_path, "r", encoding="utf-8") as file:
-            data = json.load(file)
-            return data
-    except Exception as e:
-        print("Can´t open data.json file.")
-
-def check_for_data_file():
-    global data_file_path
-    if not data_file_path.exists():
-        default_content = {
-            "backup_paths": [],
-            "scheduled_scripts": [],
-            "userdata": [],
-            "server_data": global_variables.data_file_dict}
-        with open(data_file_path, 'w', encoding='utf-8') as f:
-            json.dump(default_content, f, indent=4)
 
 def verify_user_access(username, backup_id):
-    file = read()
+    file = load_file()
     # Verify user access
     found = False
-    userdata = file["userdata"]
+    userdata = file.userdata
     for user in userdata:
-        if user["username"] == username:
-            for backup in user["backup_processes"]:
+        if user.username == username:
+            for backup in user.backup_processes:
                 if backup == backup_id:
                     found = True
     return found
@@ -69,62 +40,6 @@ def check_rank(username, userdata):
     return found, admin
 
 
-def deep_update_with_defaults(entry: dict, defaults: dict) -> dict:
-    """Rekursiv Defaults in Entry mergen, ohne bestehende Werte zu überschreiben."""
-    global count
-    for key, default_value in defaults.items():
-        if key not in entry:
-            entry[key] = default_value
-            count += 1
-        elif isinstance(default_value, dict) and isinstance(entry[key], dict):
-            deep_update_with_defaults(entry[key], default_value)
-    return entry
-
-
-def update_config_with_defaults(data: dict, defaults: dict) -> dict:
-    """
-    Aktualisiert JSON-Daten rekursiv:
-    - Listen (z. B. userdata, backup_paths) werden über alle Einträge gemerged
-    - Dicts (z. B. server_data) werden rekursiv zusammengeführt
-    """
-    global count
-    for key, default_schema in defaults.items():
-        if key not in data:
-            data[key] = default_schema
-            count += 1
-        elif isinstance(data[key], list) and isinstance(default_schema, dict):
-            for entry in data[key]:
-                deep_update_with_defaults(entry, default_schema)
-        elif isinstance(data[key], dict) and isinstance(default_schema, dict):
-            deep_update_with_defaults(data[key], default_schema)
-    return data
-
-def migrate_config(config_path: str):
-    """Lädt Config, migriert sie und speichert sie zurück"""
-
-    # Defaults zusammenstellen
-    defaults = {
-        "backup_paths": global_variables.backup_process_dict,
-        "scheduled_scripts": global_variables.scheduled_scripts_dict,
-        "userdata": global_variables.userdata_dict,
-        "server_data": global_variables.data_file_dict
-    }
-
-    # JSON laden
-    with open(config_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    # Schema-Update durchführen (NEUE Funktion!)
-    updated_data = update_config_with_defaults(data, defaults)
-
-    # Zurückschreiben
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(updated_data, f, indent=4, ensure_ascii=False)
-
-    if count > 0:
-        print(f"File successfully merged. {count} entries changed.")
-    return updated_data
-
 def convert_home_path(folder_to_backup, folder_to_save_backup):
     home_folder = Path.home()
     if folder_to_backup.startswith("~"):
@@ -135,15 +50,15 @@ def convert_home_path(folder_to_backup, folder_to_save_backup):
     return folder_to_backup, folder_to_save_backup
 
 def add_backup_to_user(backup_id, username):
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
+    userdata = file.userdata
     found = False
     try:
         for x, user in enumerate(userdata):
-            if user["username"] == username:
+            if user.username == username:
                 found = True
-                user["backup_processes"].append(backup_id)
-                file["userdata"][x] = user
+                user.backup_processes.append(backup_id)
+                file.userdata[x] = user
     except Exception as e:
         msg = f"Error in add_backup_to_user(): {e}"
         logger.error(msg)
@@ -157,18 +72,20 @@ def add_backup_to_user(backup_id, username):
 
 def fill_backup_task(folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length, username):
     backup_id = str(uuid4())
+    entry = {
+        "backup_id": backup_id,
+        "folder_to_backup": folder_to_backup,
+        "folder_to_save_backup": folder_to_save_backup,
+        "name": name,
+        "backup_frequency": int(backup_frequency),
+        "status_message": status_message,
+        "status": status,
+        "version_history_length": int(version_history_length),
+    }
 
-    entry = global_variables.backup_process_dict
-    entry["backup_id"] = backup_id
-    entry["folder_to_backup"] = folder_to_backup
-    entry["folder_to_save_backup"] = folder_to_save_backup
-    entry["name"] = name
-    entry["backup_frequency"] = int(backup_frequency)
-    entry["status_message"] = status_message
-    entry["status"] = status
-    entry["version_history_length"] = int(version_history_length)
     result, msg = add_backup_to_user(backup_id, username)
     if result:
         return True, entry
     else:
         return False, msg
+    

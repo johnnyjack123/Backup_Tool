@@ -1,24 +1,23 @@
 import hashlib
 import os
 from program_files.app import app
-from program_files.outsourced_functions import read, save
 from functools import wraps
 from flask import redirect, url_for, session
 from uuid import uuid4
-import program_files.global_variables as global_variables
-
+from program_files.file_handler import load_file, save_file, add_user
+from program_files.logger import logger
 
 def set_cookie_key():
-    file = read()
-    server_data = file["server_data"]
+    file = load_file()
+    serverdata = file.serverdata
 
-    if server_data["cookie_key"]:
-        cookie_key = server_data["cookie_key"]
+    if serverdata.cookie_key:
+        cookie_key = serverdata.cookie_key
     else:
         cookie_key = os.urandom(32).hex()
-        server_data["cookie_key"] = cookie_key
-        file["server_data"] = server_data
-        save(file)
+        serverdata.cookie_key = cookie_key
+        file.serverdata = serverdata
+        save_file(file)
 
     app.secret_key = cookie_key
 
@@ -31,8 +30,8 @@ def login_required(f):
     return wrapper
 
 def validate_passwords(password, confirmed_password, salt, username, mode):
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
+    userdata = file.userdata
     hashed_password = hashlib.sha256((str(password) + salt).encode()).hexdigest()
     hashed_confirmed_password = hashlib.sha256((str(confirmed_password) + salt).encode()).hexdigest()
     success = False
@@ -40,7 +39,7 @@ def validate_passwords(password, confirmed_password, salt, username, mode):
         return "No password match or username already exists.", success
     if mode != "password only":
         for user in userdata:
-            if username == user["username"]:
+            if username == user.username:
                 return "No password match or username already exists.", success
         if username is None or username == "None":
             return "Username None is not available", success
@@ -49,24 +48,24 @@ def validate_passwords(password, confirmed_password, salt, username, mode):
 
 def check_log_in():
     username = session.get('username')
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
+    userdata = file.userdata
     for user in userdata:
-        if user["username"] == username:
+        if user.username == username:
             return True
     return False
 
 def log_user_in(username, password):
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
+    userdata = file.userdata
     for user in userdata:
-        if user["username"] == username:
-            salt = user["salt"]
+        if user.username == username:
+            salt = user.salt
             if password:
                 hashed_password = hashlib.sha256((password + salt).encode()).hexdigest()
-                if hashed_password == user["password_hash"]:
+                if hashed_password == user.password_hash:
                     session['username'] = username
-                    session['user_id'] = user["user_id"]
+                    session['user_id'] = user.user_id
                     return "success"
                 else:
                     return "Wrong password"
@@ -75,8 +74,8 @@ def log_user_in(username, password):
     return "User not found"
 
 def signing_up(username, password, confirmed_password):
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
+    userdata = file.userdata
     salt = os.urandom(32).hex()
     hashed_password, success = validate_passwords(password, confirmed_password, salt, username, "whole validation")
     user_id = str(uuid4())
@@ -86,16 +85,15 @@ def signing_up(username, password, confirmed_password):
         else:
             rank = "user"
 
-        entry = global_variables.userdata_dict
-        entry["user_id"] = user_id
-        entry["username"] = username
-        entry["password_hash"] = hashed_password
-        entry["salt"] = salt
-        entry["rank"] = rank
+        entry = {
+            "user_id": user_id,
+            "username": username,
+            "password_hash": hashed_password,
+            "salt": salt,
+            "rank": rank
+        }
+        add_user(entry)
 
-        userdata.append(entry)
-        file["userdata"] = userdata
-        save(file)
         return "success"
     else:
         return hashed_password
@@ -103,3 +101,38 @@ def signing_up(username, password, confirmed_password):
 def log_user_out():
     session.clear()  # oder: session.pop('user_id', None); session.pop('username', None)
     return redirect(url_for("log_in_page"))
+
+def change_password(file, username, password, confirmed_password):
+    for x, user in enumerate(file.userdata):
+        if user.username == username:
+            salt = user.salt
+            if not salt:
+                return False, "No salt found"
+
+            hashed_password, success = validate_passwords(password, confirmed_password, salt, username, "password only")
+            if success:
+                user.password_hash = hashed_password
+                file.userdata[x] = user
+                save_file(file)
+                logger.info("Successfully changed password.")
+                return True, ""
+            else:
+                msg = f"Something went wrong by changing the password: {hashed_password}"
+                logger.info(msg)
+                return False, msg
+    return False, "User not found"
+
+def change_username(file, username, new_username):
+    found = False
+    for x, user in enumerate(file.userdata):
+        if user.username == username:
+            found = True
+            user.username = new_username
+            file.userdata[x] = user
+            save_file(file)
+            logger.info("Successfully changed username.")
+            break
+        else:
+            logger.error("User in change_username not found")
+            break
+    return found

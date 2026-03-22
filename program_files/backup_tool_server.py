@@ -2,12 +2,12 @@ from pathlib import Path
 import time
 from program_files.app import app, socketio
 from flask import render_template, request, redirect, url_for, session
-from program_files.outsourced_functions import save, read, check_for_data_file, verify_user_access, delete_backup, check_rank, migrate_config, convert_home_path, fill_backup_task
-from program_files.lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
+from program_files.outsourced_functions import verify_user_access, check_rank, migrate_config, convert_home_path, fill_backup_task
+from program_files.lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, change_password, change_username
 from uuid import uuid4
-import program_files.global_variables as global_variables
 from program_files.logger import logger
-from program_files.backup import update_backup_times
+from program_files.backup import update_backup_times, start_backup
+from program_files.file_handler import load_file, save_file, add_backup_process, edit_backup_process
 
 def validate_filepath(path):
     path = Path(path)
@@ -23,9 +23,9 @@ def handle_connect():
 @app.route("/")
 @login_required
 def home():
-    file = read()
-    backup_paths = file["backup_paths"]
-    userdata = file["userdata"]
+    file = load_file()
+    backup_paths = file.backup_paths
+    userdata = file.userdata
     visible_processes = []
     username = session.get("username")
     if not username:
@@ -34,12 +34,12 @@ def home():
     found = False
     try:
         for user in userdata:
-            if user["username"] == username:
+            if user.username == username:
                 found = True
-                if user["backup_processes"]:
-                    for backup_process_id in user["backup_processes"]:
+                if user.backup_processes:
+                    for backup_process_id in user.backup_processes:
                         for backup in backup_paths:
-                            if backup["backup_id"] == backup_process_id:
+                            if backup.backup_id == backup_process_id:
                                 visible_processes.append(backup)
     except Exception as e:
         return render_template("error_page.html", error=f"Internal server error: {e}")
@@ -85,9 +85,9 @@ def create_backup_task():
     
     if not result:
         return render_template("error_page.html", error=entry)
-    file = read()
-    file["backup_paths"].append(entry)
-    save(file)
+    
+    add_backup_process(entry)
+    
     logger.info("Successfully created backup process.")
     return redirect(url_for("home"))
 
@@ -106,7 +106,6 @@ def edit_backup_task():
         logger.error(f"Some input is missing in edit_backup_task.")
         return render_template("error_page.html", error=f"Some input is missing in edit_backup_task.")
 
-    file = read()
     result = verify_user_access(username, backup_id)
 
     if not result:
@@ -122,27 +121,30 @@ def edit_backup_task():
         status_message = "Invalid file path"
         status = "stopped"
         logger.error("Invalid file path.")
+    
+    file = load_file()
 
     found = False
-    for x, entry in enumerate(file["backup_paths"]):
-        if entry["backup_id"] == backup_id:
+    for x, entry in enumerate(file.backup_paths):
+        if entry.backup_id == backup_id:
             found = True
-            last_backup = entry["last_backup"]
 
-            entry = global_variables.backup_process_dict
-            entry["backup_id"] = backup_id
-            entry["folder_to_backup"] = folder_to_backup
-            entry["folder_to_save_backup"] = folder_to_save_backup
-            entry["name"] = name
-            entry["last_backup"] = last_backup
-            entry["backup_frequency"] = backup_frequency
-            entry["status_message"] = status_message
-            entry["status"] = status
-            entry["version_history_length"] = version_history_length
+            new_entry = {
+                "username": username,
+                "name": name,
+                "folder_to_backup": folder_to_backup,
+                "folder_to_save_backup": folder_to_save_backup,
+                "backup_frequency": backup_frequency,
+                "backup_id": backup_id,
+                "version_history_length": version_history_length,
+                "last_backup": entry.last_backup,
+                "status_message": status_message,
+                "status": status
+                }
+            edit_backup_process(new_entry, x)
 
-            file["backup_paths"][x] = entry
-            save(file)
             logger.info(f"Successfully edited backup {name}.")
+            break
     if not found:
         return render_template("error_page.html", error=f"Backup process not found.")
     return redirect(url_for("home"))
@@ -157,24 +159,23 @@ def delete_backup_task():
         logger.error(f"Some input is missing in delete_backup_task.")
         return render_template("error_page.html", error=f"Some input is missing in delete_backup_task.")
 
-    file = read()
-
     result = verify_user_access(username, backup_id)
 
     if not result:
         return render_template("error_page.html", error=f"You are now allowed to access this backup process.")
-
-    for x, entry in enumerate(file["backup_paths"]):
-        if entry["backup_id"] == backup_id:
-            del file["backup_paths"][x]
+    
+    file = load_file()
+    for x, entry in enumerate(file.backup_paths):
+        if entry.backup_id == backup_id:
+            del file.backup_paths[x]
             break
-    for x, entry in enumerate(file["userdata"]):
-        if entry["username"] == username:
-            for y, entry_id in enumerate(entry["backup_processes"]):
+    for x, entry in enumerate(file.userdata):
+        if entry.username == username:
+            for y, entry_id in enumerate(entry.backup_processes):
                 if entry_id == backup_id:
-                    del entry["backup_processes"][y]
+                    del entry.backup_processes[y]
     logger.info(f"Successfully deleted backup {backup_id}")
-    save(file)
+    save_file(file)
     return redirect(url_for("home"))
 
 @app.route("/toggle_process_status", methods=["POST"])
@@ -187,26 +188,27 @@ def toggle_process_status():
         logger.error("Some inputs are missing or you tried to pause an stopped process in toggle_process_status. If the second option is true you have to solve the issue first (probably a wrong file path) before you are able, to pause/continue this process again.")
         return render_template("error_page.html", error="Some inputs are missing in toggle_process_status.")
 
-    file = read()
     result = verify_user_access(username, backup_id)
     if not result:
         return render_template("error_page.html", error=f"You are now allowed to access this backup process.")
+    
     found = False
+    file = load_file()
 
-    for x, entry in enumerate(file["backup_paths"]):
-        if entry["backup_id"] == backup_id:
+    for x, entry in enumerate(file.backup_paths):
+        if entry.backup_id == backup_id:
             found = True
-            if entry["status"] != "stopped":
-                if entry["status"] == "running":
-                    entry["status"] = "paused"
-                    logger.info(f"Process {entry["name"]} paused")
+            if entry.status != "stopped":
+                if entry.status == "running":
+                    entry.status = "paused"
+                    logger.info(f"Process {entry.name} paused")
                 else:
-                    entry["status"] = "running"
-                    logger.info(f"Process {entry["name"]} resumed")
-                file["backup_paths"][x] = entry
-                save(file)
+                    entry.status = "running"
+                    logger.info(f"Process {entry.name} resumed")
+                file.backup_paths[x] = entry
+                save_file(file)
             else:
-                logger.error(f"Process {entry["name"]} can't resumed, because there is an unknown error.")
+                logger.error(f"Process {entry.name} can't resumed, due to an unknown error.")
             break
 
     if not found:
@@ -221,10 +223,8 @@ def log_in_page():
         logger.info("Successfully logged in.")
         return redirect(url_for("home"))
     else:
-        file = read()
-        userdata = file["userdata"]
         logger.info("Unregistert user")
-        return render_template("log_in.html", userdata=userdata)
+        return render_template("log_in.html")
 
 @app.route("/log_in", methods=["POST"])
 def log_in():
@@ -244,8 +244,8 @@ def log_in():
 
 @app.route("/sign_up_page", methods=["GET"])
 def sign_up_page():
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
+    userdata = file.userdata
     if not userdata:
         return render_template("sign_up.html")
     else:
@@ -253,8 +253,8 @@ def sign_up_page():
 
 @app.route("/sign_up", methods=["POST"])
 def sign_up():
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
+    userdata = file.userdata
     if not userdata:
         username = request.form.get("username")
         password = request.form.get("password")
@@ -281,8 +281,8 @@ def log_out():
 
 @app.route("/settings_page")
 def settings_page():
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
+    userdata = file.userdata
     username = session.get("username")
 
     if not username:
@@ -296,7 +296,7 @@ def settings_page():
     if admin:
         users = []
         for user in userdata:
-            users.append(user["username"])
+            users.append(user.username)
     else:
         users = []
     return render_template("settings.html", users=users)
@@ -311,40 +311,19 @@ def settings():
     add_user_password = request.form.get("add_user_password")
     add_user_confirmed_password = request.form.get("add_user_confirmed_password")
 
-    file = read()
-    userdata = file["userdata"]
+    file = load_file()
     did_change = False
-    if password and confirmed_password:
-        did_change = True
-        found = False
-        for x, user in enumerate(userdata):
-            if user["username"] == username:
-                found = True
-                salt = user["salt"]
-                if not salt:
-                    return render_template("login_error_page", error="No salt found.")
 
-                hashed_password, success = validate_passwords(password, confirmed_password, salt, username, "password only")
-                if success:
-                    user["password_hash"] = hashed_password
-                    file["userdata"][x] = user
-                    save(file)
-                    logger.info("Successfully changed password.")
-                else:
-                    logger.info(f"Something went wrong by changing the password: {hashed_password}")
-        if not found:
-            return render_template("error_page.html", error=f"User not found.")
+    if password and confirmed_password:
+        result, msg = change_password(file, username, password, confirmed_password)
+        if not result:
+            return render_template("error_page.html", error=msg)
+        did_change = True
+
     if new_username:
         did_change = True
-        found = False
-        for x, user in enumerate(userdata):
-            if user["username"] == username:
-                found = True
-                user["username"] = new_username
-                file["userdata"][x] = user
-                save(file)
-                logger.info("Successfully changed username.")
-        if not found:
+        result = change_username(file, username, new_username)
+        if not result:
             return render_template("error_page.html", error=f"User not found.")
 
     if add_user_name and add_user_password and add_user_confirmed_password:
@@ -355,14 +334,15 @@ def settings():
         else:
             logger.error(f"Something went wrong by creating the new user: {result}")
             return render_template("error_page.html", error=f"Something went wrong by creating the new user: {result}")
-    print(did_change)
     if not did_change:
         logger.info("Nothing changed because some inputs are missing.")
     return redirect(url_for("settings_page"))
 
 if __name__ == "__main__":
-    check_for_data_file()
-    config = migrate_config(global_variables.data_file_path)
+    #check_for_data_file()
+    #config = migrate_config(global_variables.data_file_path)
+    file = load_file()
+    print(f"Userdata: {file.userdata}")
     start_backup()
     set_cookie_key()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

@@ -3,9 +3,10 @@ from pathlib import Path
 import shutil
 import threading
 from program_files.logger import logger
-from program_files.outsourced_functions import sort_folders, read, save
+from program_files.outsourced_functions import sort_folders
 from program_files.sockets import send_socket
 import time
+from program_files.file_handler import load_file, save_file
 
 def backup_folders(folder_to_backup, base_backup_dir):
     try:
@@ -34,50 +35,50 @@ def backup_folders(folder_to_backup, base_backup_dir):
 
 def check_for_backup():
     while True:
-        file = read()
+        file = load_file()
         now = datetime.now()
-        backup_paths = file["backup_paths"]
+        backup_paths = file.backup_paths
         if backup_paths:
             for entry, backup in enumerate(backup_paths):
-                status = backup["status"]
+                status = backup.status
                 if status == "running":
-                    last_backup = backup["last_backup"]
+                    last_backup = backup.last_backup
                     if last_backup:
-                        backup_frequency = int(backup["backup_frequency"])
+                        backup_frequency = int(backup.backup_frequency)
                         if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
-                            folder_to_backup = Path(backup["folder_to_backup"])
-                            folder_to_save_backup = Path(backup["folder_to_save_backup"])
+                            folder_to_backup = Path(backup.folder_to_backup)
+                            folder_to_save_backup = Path(backup.folder_to_save_backup)
                             result = backup_folders(folder_to_backup, folder_to_save_backup)
                             if not result:
-                                status_message = f"Error in process {backup["name"]}. See logs for more detailed error message."
-                                backup["status_message"] = status_message
+                                status_message = f"Error in process {backup.name}. See logs for more detailed error message."
+                                backup.status_message = status_message
                             else:
                                 status_message = "ok"
-                                result_delete = delete_backup(folder_to_save_backup, backup["version_history_length"])
+                                result_delete = delete_backup(folder_to_save_backup, backup.version_history_length)
 
                                 if result_delete:
-                                    logger.info(f"Successfully deleted the oldest backup version of {backup["name"]}.")
+                                    logger.info(f"Successfully deleted the oldest backup version of {backup.name}.")
 
-                            send_socket('status_update', {'id': backup["backup_id"], 'status_message': status_message})
-                            file["backup_paths"][entry]["status_message"] = status_message
-                            file["backup_paths"][entry]["last_backup"] = now.isoformat()
-                            save(file)
+                            send_socket('status_update', {'id': backup.backup_id, 'status_message': status_message})
+                            file.backup_paths[entry].status_message = status_message
+                            file.backup_paths.[entry].last_backup = now.isoformat()
+                            save_file(file)
                             update_backup_times()
                     else:
-                        file["backup_paths"][entry]["last_backup"] = now.isoformat()
-                        save(file)
-                        folder_to_backup = backup["folder_to_backup"]
-                        folder_to_save_backup = backup["folder_to_save_backup"]
+                        file.backup_paths[entry].last_backup = now.isoformat()
+                        save_file(file)
+                        folder_to_backup = backup.folder_to_backup
+                        folder_to_save_backup = backup.folder_to_save_backup"
                         result = backup_folders(folder_to_backup, folder_to_save_backup)
                         if not result:
-                            status_message = f"Error in process {backup["name"]}. See logs for more detailed error message."
-                            backup["status_message"] = status_message
+                            status_message = f"Error in process {backup.name}. See logs for more detailed error message."
+                            backup.status_message = status_message
                         else:
                             status_message = "ok"
 
-                        send_socket('status_update', {'id': backup["backup_id"], 'status_message': status_message})
-                        file["backup_paths"][entry]["status_message"] = status_message
-                        save(file)
+                        send_socket('status_update', {'id': backup.backup_id, 'status_message': status_message})
+                        file.backup_paths[entry].status_message = status_message
+                        save_file(file)
                         update_backup_times()
                 else:
                     continue
@@ -91,12 +92,12 @@ def start_backup():
     thread.start()
 
 def update_backup_times():
-    file = read()
-    backup_paths = file["backup_paths"]
+    file = load_file()
+    backup_paths = file.backup_paths
     backup_times = []
     for entry in backup_paths:
-        content = {"name": entry["name"],
-                   "last_backup": entry["last_backup"]}
+        content = {"name": entry.name,
+                   "last_backup": entry.last_backup}
         backup_times.append(content)
     send_socket('backup_time_update', backup_times)
 

@@ -6,3 +6,4 @@ backup_tool.log
 .idea
 tmp
 __pycache__
+_data.json

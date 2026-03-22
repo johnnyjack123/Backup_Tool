@@ -5,7 +5,7 @@ import io
 import os
 import shutil
 import sys
-from program_files.outsourced_functions import read, check_for_data_file
+from program_files.file_handler import ensure_file_exists, load_and_migrate, load_file
 # Basisverzeichnis = Ordner, wo der Launcher selbst liegt
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -103,11 +103,14 @@ def check_for_updates():
     else:
         print("Program is unreachable")
 
-check_for_data_file()
+# check_for_data_file()
+ensure_file_exists()
+data = load_and_migrate()
 
-data = read()
-server_data = data["server_data"]
-if server_data["auto_update"] == "yes":
+serverdata = data.serverdata
+file = load_file()
+print(f"file: {file}, serverdata: {file.serverdata}")
+if serverdata.auto_update == "yes":
     if check_internet_connection():
         check_for_updates()
     else:
