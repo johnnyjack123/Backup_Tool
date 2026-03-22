@@ -2,7 +2,7 @@ from pathlib import Path
 import time
 from program_files.app import app, socketio
 from flask import render_template, request, redirect, url_for, session
-from program_files.outsourced_functions import save, read, check_for_data_file, verify_user_access, delete_backup, check_rank, migrate_config
+from program_files.outsourced_functions import save, read, check_for_data_file, verify_user_access, delete_backup, check_rank, migrate_config, convert_home_path, fill_backup_task
 from program_files.lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, validate_passwords
 from uuid import uuid4
 import program_files.global_variables as global_variables
@@ -63,15 +63,8 @@ def create_backup_task():
         logger.error(f"Some input is missing in create_backup_task")
         return render_template("error_page.html", error=f"Some input is missing in create_backup_task")
 
-    home_folder = Path.home()
-    if folder_to_backup.startswith("~"):
+    folder_to_backup, folder_to_save_backup = convert_home_path(folder_to_backup, folder_to_save_backup)
 
-        folder_to_backup.replace("~", str(home_folder))
-
-    if folder_to_save_backup.startswith("~"):
-        folder_to_save_backup.replace("~", str(home_folder))
-
-    backup_id = str(uuid4())
 
     folder_to_backup = folder_to_backup.replace('\\', '\\').strip('"').strip("'")
     folder_to_save_backup = folder_to_save_backup.replace('\\', '\\').strip('"').strip("'")
@@ -87,29 +80,12 @@ def create_backup_task():
         status = "stopped"
         logger.error("Invalid file path.")
 
-    entry = global_variables.backup_process_dict
-    entry["backup_id"] = backup_id
-    entry["folder_to_backup"] = folder_to_backup
-    entry["folder_to_save_backup"] = folder_to_save_backup
-    entry["name"] = name
-    entry["backup_frequency"] = int(backup_frequency)
-    entry["status_message"] = status_message
-    entry["status"] = status
-    entry["version_history_length"] = int(version_history_length)
-
+    
+    result, entry = fill_backup_task(folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length, username)
+    
+    if not result:
+        return render_template("error_page.html", error=entry)
     file = read()
-    userdata = file["userdata"]
-    found = False
-    try:
-        for x, user in enumerate(userdata):
-            if user["username"] == username:
-                found = True
-                user["backup_processes"].append(backup_id)
-                file["userdata"][x] = user
-    except Exception as e:
-        return render_template("error_page.html", error=f"Internal server error: {e}")
-    if not found:
-        return render_template("error_page.html", error=f"User not found.")
     file["backup_paths"].append(entry)
     save(file)
     logger.info("Successfully created backup process.")

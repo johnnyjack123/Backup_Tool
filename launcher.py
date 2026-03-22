@@ -73,7 +73,7 @@ def update():
 
 def launch_app():
     global python_script
-    subprocess.run([sys.executable, "-m", "program_files.Backup_Tool"], cwd=BASE_DIR)
+    subprocess.run([sys.executable, "-m", "program_files.backup_tool_server"], cwd=BASE_DIR)
 
 
 def check_for_updates():

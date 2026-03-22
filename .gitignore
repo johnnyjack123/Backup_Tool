@@ -1,5 +1,8 @@
 /data.json
-/backup_tool.log
+backup_tool.log
 /GitHub_Pull/
 /backup/
 /Test_backups/
+.idea
+tmp
+__pycache__

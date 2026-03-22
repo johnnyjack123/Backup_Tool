@@ -1,5 +1,8 @@
 import json
 import program_files.global_variables as global_variables
+from pathlib import Path
+from uuid import uuid4
+from logger import logger
 
 count = 0
 
@@ -121,3 +124,51 @@ def migrate_config(config_path: str):
     if count > 0:
         print(f"File successfully merged. {count} entries changed.")
     return updated_data
+
+def convert_home_path(folder_to_backup, folder_to_save_backup):
+    home_folder = Path.home()
+    if folder_to_backup.startswith("~"):
+        folder_to_backup.replace("~", str(home_folder))
+
+    if folder_to_save_backup.startswith("~"):
+        folder_to_save_backup.replace("~", str(home_folder))
+    return folder_to_backup, folder_to_save_backup
+
+def add_backup_to_user(backup_id, username):
+    file = read()
+    userdata = file["userdata"]
+    found = False
+    try:
+        for x, user in enumerate(userdata):
+            if user["username"] == username:
+                found = True
+                user["backup_processes"].append(backup_id)
+                file["userdata"][x] = user
+    except Exception as e:
+        msg = f"Error in add_backup_to_user(): {e}"
+        logger.error(msg)
+        return False, msg
+    if not found:
+        msg = "User not found in add_backup_to_user()"
+        logger.error(msg)
+        return False, msg
+    else:
+        return True, ""
+
+def fill_backup_task(folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length, username):
+    backup_id = str(uuid4())
+
+    entry = global_variables.backup_process_dict
+    entry["backup_id"] = backup_id
+    entry["folder_to_backup"] = folder_to_backup
+    entry["folder_to_save_backup"] = folder_to_save_backup
+    entry["name"] = name
+    entry["backup_frequency"] = int(backup_frequency)
+    entry["status_message"] = status_message
+    entry["status"] = status
+    entry["version_history_length"] = int(version_history_length)
+    result, msg = add_backup_to_user(backup_id, username)
+    if result:
+        return True, entry
+    else:
+        return False, msg
