@@ -1,142 +1,81 @@
+from program_files.logger import logger
+from pathlib import Path
 import subprocess
 import sys
-import platform
-from program_files.outsourced_functions import read, save
-from program_files.logger import logger
-from program_files.sockets import send_socket
-from time import perf_counter
-import threading
+import stat
+import os
 from datetime import datetime, timedelta
-import time
+from program_files.file_handler import save_file
+from program_files.sockets import send_socket
 
-def monitor_process(proc, schedule_id):
-    start_time = perf_counter()
+def execute_script(script) -> int | None:
+    path = Path(script.file_path)
 
-    # Warten bis Prozess beendet ist
-    return_code = proc.wait()
+    if not path.exists():
+        logger.error(f"Error in execute_script: file path {script.file_path} does not exist or is unavailable")
+        return None
 
-    # Laufzeit berechnen
-    elapsed_time = perf_counter() - start_time
+    suffix = path.suffix.lower()
 
-    # Daten aktualisieren
-    file = read()
-    script_data = file["scheduled_scripts"]
+    try:
+        if suffix == ".py":
+            result = subprocess.run([sys.executable, str(path)], check=True)
+            return result.returncode
 
-    for x, script in enumerate(script_data):
-        if script["script_id"] == schedule_id:
-            if return_code == 0:
-                status = "running"
-                message = "ok"
-                logger.info(message)
-            else:
-                status = "failed"
-                message = f"Script failed with code {return_code} after {elapsed_time:.2f}s"
-                logger.error(message)
+        elif os.name == "nt" and suffix in {".bat", ".cmd"}:
+            result = subprocess.run(["cmd", "/c", str(path)], check=True)
+            return result.returncode
 
-            script["status"] = status
-            script["status_message"] = message
+        elif os.name != "nt" and suffix == ".sh":
+            if not os.access(path, os.X_OK):
+                mode = os.stat(path).st_mode
+                mode |= (mode & 0o444) >> 2
+                os.chmod(path, mode)
 
-            send_socket("status", status)
-            send_socket('status_update',
-                        {'id': script["script_id"], 'status_message': message})
+            result = subprocess.run(["bash", str(path)], check=True)
+            return result.returncode
 
-            file["scheduled_scripts"][x] = script
-            save(file)
-            break
-
-def run_script(script_id):
-    file = read()
-    script_data = file["scheduled_scripts"]
-    for x, script in enumerate(script_data):
-        if script["script_id"] == script_id:
-            path = script["script_path"]
-            try:
-                if path.endswith(".bat") and platform.system() == "Windows":
-                    proc = subprocess.Popen(["cmd.exe", "/c", path])
-                elif path.endswith(".ps1") and platform.system() == "Windows":
-                    proc = subprocess.Popen(["powershell.exe", "-File", path])
-                elif path.endswith(".sh") and platform.system() == "Linux" or platform.system() == "Darwin":
-                    proc = subprocess.Popen(["bash", path])
-                elif path.endswith(".py"):
-                    proc = subprocess.Popen([sys.executable, path, "arg1", "arg2"])
-                else:
-                    error = f"Unsupported file suffix in scheduled script {script["name"]}"
-                    logger.error(error)
-                    script["status_message"] = error
-                    send_socket('status_update',
-                                {'id': script["script_id"], 'status_message': error})
-                    status = "stopped"
-                    script["status"] = status
-                    send_socket("status", status)
-                    file["scheduled_scripts"][x] = script
-                    save(file)
-                    return False
-
-                monitor_thread = threading.Thread(
-                    target=monitor_process,
-                    args=(proc, script_id),
-                    daemon=True
-                )
-                monitor_thread.start()
-                return True
-            except Exception as e:
-                error = f"Failed to start {script["script_name"]}: error: {str(e)}"
-                logger.error(error)
-                script["status"] = "stopped"
-                script["status_message"] = error
-                send_socket("status", "failed")
-                send_socket('status_update',
-                            {'id': script["script_id"], 'status_message': error})
-                file["scheduled_scripts"][x] = script
-                save(file)
-                return False
-
-def check_scripts():
-    while True:
-        file = read()
-        now = datetime.now()
-        scheduled_scripts = file["scheduled_scripts"]
-        if scheduled_scripts:
-            for entry, script in enumerate(scheduled_scripts):
-                status = script["status"]
-                if status == "running":
-                    last_execution = script["last_execution"]
-                    if last_execution:
-                        execution_frequency = int(script["execution_frequency"])
-                        if now - datetime.fromisoformat(last_execution) >= timedelta(hours=execution_frequency):
-                            result = run_script(script["script_id"])
-                            if not result:
-                                status_message = f"Error in process {script["name"]}. See logs for more detailed error message."
-                                script["status_message"] = status_message
-                            else:
-                                status_message = "ok"
-
-                            send_socket('status_update',
-                                        {'id': script["script_id"], 'status_message': status_message})
-                            file["scheduled_scripts"][entry]["status_message"] = status_message
-                            new_now = now.isoformat()
-                            file["scheduled_scripts"][entry]["last_execution"] = new_now
-                            save(file)
-                            send_socket("update_script_execution_time", {"name": script["script_id"], "last_execution": new_now})
-                    else:
-                        file["backup_paths"][entry]["last_backup"] = now.isoformat()
-                        save(file)
-                        folder_to_backup = backup["folder_to_backup"]
-                        folder_to_save_backup = backup["folder_to_save_backup"]
-                        result = backup_folders(folder_to_backup, folder_to_save_backup)
-                        if not result:
-                            status_message = f"Error in process {backup["name"]}. See logs for more detailed error message."
-                            backup["status_message"] = status_message
-                        else:
-                            status_message = "ok"
-
-                        send_socket('status_update', {'id': backup["backup_id"], 'status_message': status_message})
-                        file["backup_paths"][entry]["status_message"] = status_message
-                        save(file)
-                        update_backup_times()
-                else:
-                    continue
-
-            time.sleep(60)
         else:
-            time.sleep(10)
+            logger.error(
+                f"Script {script.file_path} can't be executed; either the script type is not supported "
+                f"or your OS cannot execute it"
+            )
+            return None
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Script {script.file_path} failed with exit code {e.returncode}")
+        return e.returncode
+
+    except Exception as e:
+        logger.error(f"Error while executing script {script.file_path}: {e}")
+        return None
+
+def execute_script_handler(file, entry, script, now):
+    result = execute_script(script)
+    if result == 0:
+        logger.info(f"Successfully executed script: {script.file_paths}")
+        status_message = "ok"
+        file.backup_paths[entry].status_message = status_message
+        file.backup_paths[entry].last_backup = now.isoformat()
+        save_file(file)
+    else:
+        logger.error(f"Error in execution of script: {script.paths}")
+        status_message = f"Error in process {script.file_paths}. See logs for more detailed error message."
+        file.backup_paths[entry].status_message = status_message
+        save_file(file)
+    send_socket('status_update', {'id': script.script_id, 'status_message': status_message})
+    return
+
+def check_for_script(file, now):
+    script_paths = file.file_path
+    for entry, script in enumerate(script_paths):
+        status = script.status
+        if status == "running":
+            last_execution = script.last_execution
+            if last_execution:
+                execution_frequency = script.execution_frequency
+                if now - datetime.fromisoformat(last_execution) >= timedelta(hours=execution_frequency):
+                    result = execute_script_handler(file, entry, script, now)
+            else:
+                result = execute_script_handler(file, entry, script, now)
+            

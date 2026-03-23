@@ -2,12 +2,12 @@ from pathlib import Path
 import time
 from program_files.app import app, socketio
 from flask import render_template, request, redirect, url_for, session
-from program_files.outsourced_functions import verify_user_access, check_rank, migrate_config, convert_home_path, fill_backup_task
+from program_files.outsourced_functions import verify_user_access, check_rank, convert_home_path, add_backup_to_user, add_script_to_user
 from program_files.lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, change_password, change_username
 from uuid import uuid4
 from program_files.logger import logger
-from program_files.backup import update_backup_times, start_backup
-from program_files.file_handler import load_file, save_file, add_backup_process, edit_backup_process
+from program_files.backup import update_backup_times, start_intervall_worker
+from program_files.file_handler import load_file, save_file, add_backup_process, add_script_process, edit_backup_process
 
 def validate_filepath(path):
     path = Path(path)
@@ -63,8 +63,9 @@ def create_backup_task():
         logger.error(f"Some input is missing in create_backup_task")
         return render_template("error_page.html", error=f"Some input is missing in create_backup_task")
 
-    folder_to_backup, folder_to_save_backup = convert_home_path(folder_to_backup, folder_to_save_backup)
-
+    new_file_path = convert_home_path([folder_to_backup, folder_to_save_backup])
+    folder_to_backup = new_file_path[0]
+    folder_to_save_backup = new_file_path[1]
 
     folder_to_backup = folder_to_backup.replace('\\', '\\').strip('"').strip("'")
     folder_to_save_backup = folder_to_save_backup.replace('\\', '\\').strip('"').strip("'")
@@ -81,12 +82,13 @@ def create_backup_task():
         logger.error("Invalid file path.")
 
     
-    result, entry = fill_backup_task(folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length, username)
+    #result, entry = fill_backup_task(folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length, username)
     
-    if not result:
-        return render_template("error_page.html", error=entry)
+    #if not result:
+    #    return render_template("error_page.html", error=entry)
     
-    add_backup_process(entry)
+    backup_id = add_backup_process(username, folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length)
+    #add_backup_to_user(backup_id, username)
     
     logger.info("Successfully created backup process.")
     return redirect(url_for("home"))
@@ -216,6 +218,37 @@ def toggle_process_status():
 
     return redirect(url_for("home"))
 
+@app.route("/create_script_task", methods=["POST"])
+@login_required
+def create_script_task():
+    name = request.form.get("name").strip('"').strip("'")
+    username = session.get("username")
+    file_path = request.form.get("folder_to_backup")
+    execution_frequency = request.form.get("backup_frequency")
+    
+    if not name or not username or not file_path or not execution_frequency:
+        logger.error(f"Some input is missing in create_backup_task")
+        return render_template("error_page.html", error=f"Some input is missing in create_backup_task")
+    
+    file_path = convert_home_path([file_path])[0]
+
+    file_path = file_path.replace('\\', '\\').strip('"').strip("'")
+
+    result_file_path = validate_filepath(file_path)
+
+    if result_file_path:
+        status_message = "ok"
+        status = "running"
+    else:
+        status_message = "Invalid file path"
+        status = "stopped"
+        logger.error("Invalid file path.")
+
+    script_id = add_script_process(file_path, name, execution_frequency, status_message, status)
+    add_script_to_user(script_id, username)
+    
+    return redirect(url_for("home"))
+
 @app.route("/log_in_page")
 def log_in_page():
     result = check_log_in()
@@ -342,7 +375,6 @@ if __name__ == "__main__":
     #check_for_data_file()
     #config = migrate_config(global_variables.data_file_path)
     file = load_file()
-    print(f"Userdata: {file.userdata}")
-    start_backup()
+    start_intervall_worker()
     set_cookie_key()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

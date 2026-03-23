@@ -63,6 +63,7 @@ def log_user_in(username, password):
             salt = user.salt
             if password:
                 hashed_password = hashlib.sha256((password + salt).encode()).hexdigest()
+                print(f"Password hash {hashed_password}, {user.password_hash}")
                 if hashed_password == user.password_hash:
                     session['username'] = username
                     session['user_id'] = user.user_id

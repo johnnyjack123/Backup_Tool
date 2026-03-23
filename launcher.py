@@ -109,7 +109,6 @@ data = load_and_migrate()
 
 serverdata = data.serverdata
 file = load_file()
-print(f"file: {file}, serverdata: {file.serverdata}")
 if serverdata.auto_update == "yes":
     if check_internet_connection():
         check_for_updates()

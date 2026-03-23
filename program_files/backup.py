@@ -7,8 +7,10 @@ from program_files.outsourced_functions import sort_folders
 from program_files.sockets import send_socket
 import time
 from program_files.file_handler import load_file, save_file
+from pathlib import Path
+from program_files.scheduled_scripts import check_for_script
 
-def backup_folders(folder_to_backup, base_backup_dir):
+def backup_folders(folder_to_backup, base_backup_dir, backup, now):
     try:
         folder_to_backup = Path(folder_to_backup).resolve()
         base_backup_dir = Path(base_backup_dir).resolve()
@@ -28,67 +30,62 @@ def backup_folders(folder_to_backup, base_backup_dir):
 
         shutil.copytree(src=str(folder_to_backup), dst=str(folder_to_save_backup), ignore=ignore_backup)
         logger.info("Successfully stored backup.")
-        return True
+        status_message = "ok"
+        result_delete = delete_backup(folder_to_save_backup, backup.version_history_length)
+
+        if result_delete:
+            logger.info(f"Successfully deleted the oldest backup version of {backup.name}.")
+
     except Exception as e:
         logger.info(f"Error by backup: {e}")
-        return False
+        status_message = f"Error in process {backup.name}. See logs for more detailed error message."
+        backup.status_message = status_message
 
-def check_for_backup():
+    send_socket('status_update', {'id': backup.backup_id, 'status_message': status_message})
+    file = load_file()
+    for x, user in enumerate(file.userdata):
+        for y, entry in enumerate(user.backup_processes):
+            if entry.backup_id == backup.backup_id:
+                file.userdata[x].backup_processes[y].status_message = status_message
+                file.userdata[x].backup_processes[y].last_backup = now.isoformat()
+    save_file(file)
+    return
+
+def check_for_backup(file, now):
+    backup_paths = []
+    for user in file.userdata:
+        for entry, backup in enumerate(user.backup_processes):
+            status = backup.status
+            if status == "running":
+                last_backup = backup.last_backup
+                folder_to_backup = Path(backup.folder_to_backup)
+                folder_to_save_backup = Path(backup.folder_to_save_backup)
+                if last_backup:
+                    backup_frequency = int(backup.backup_frequency)
+                    if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
+                        backup_folders(folder_to_backup, folder_to_save_backup, backup, now)
+                else:
+                    backup_folders(folder_to_backup, folder_to_save_backup, backup, now)
+                update_backup_times()
+            else:
+                continue
+    time.sleep(60)
+
+def intervall_worker():
     while True:
         file = load_file()
         now = datetime.now()
-        backup_paths = file.backup_paths
-        if backup_paths:
-            for entry, backup in enumerate(backup_paths):
-                status = backup.status
-                if status == "running":
-                    last_backup = backup.last_backup
-                    if last_backup:
-                        backup_frequency = int(backup.backup_frequency)
-                        if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
-                            folder_to_backup = Path(backup.folder_to_backup)
-                            folder_to_save_backup = Path(backup.folder_to_save_backup)
-                            result = backup_folders(folder_to_backup, folder_to_save_backup)
-                            if not result:
-                                status_message = f"Error in process {backup.name}. See logs for more detailed error message."
-                                backup.status_message = status_message
-                            else:
-                                status_message = "ok"
-                                result_delete = delete_backup(folder_to_save_backup, backup.version_history_length)
-
-                                if result_delete:
-                                    logger.info(f"Successfully deleted the oldest backup version of {backup.name}.")
-
-                            send_socket('status_update', {'id': backup.backup_id, 'status_message': status_message})
-                            file.backup_paths[entry].status_message = status_message
-                            file.backup_paths.[entry].last_backup = now.isoformat()
-                            save_file(file)
-                            update_backup_times()
-                    else:
-                        file.backup_paths[entry].last_backup = now.isoformat()
-                        save_file(file)
-                        folder_to_backup = backup.folder_to_backup
-                        folder_to_save_backup = backup.folder_to_save_backup"
-                        result = backup_folders(folder_to_backup, folder_to_save_backup)
-                        if not result:
-                            status_message = f"Error in process {backup.name}. See logs for more detailed error message."
-                            backup.status_message = status_message
-                        else:
-                            status_message = "ok"
-
-                        send_socket('status_update', {'id': backup.backup_id, 'status_message': status_message})
-                        file.backup_paths[entry].status_message = status_message
-                        save_file(file)
-                        update_backup_times()
-                else:
-                    continue
-
-            time.sleep(60)
+        if file.backup_paths:
+            check_for_backup(file, now)
+        elif file.script_paths:
+            check_for_script(file, now)
         else:
             time.sleep(10)
+            continue
+        time.sleep(60)
 
-def start_backup():
-    thread = threading.Thread(target=check_for_backup, daemon=True)
+def start_intervall_worker():
+    thread = threading.Thread(target=intervall_worker, daemon=True)
     thread.start()
 
 def update_backup_times():

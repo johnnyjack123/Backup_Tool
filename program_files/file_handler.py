@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 import json
 import os
 import tempfile
+from uuid import uuid4
 
 
 file_path = Path("./data.json")
@@ -18,7 +19,8 @@ class Userdata(BaseModel):
     password_hash: str = ""
     salt: str = ""
     rank: str = ""
-    backup_processes: list[str] = Field(default_factory=list)
+    backup_processes: list[Backup] = Field(default_factory=list)
+    script_processes: list[Script] = Field(default_factory=list)
 
 
 class Serverdata(BaseModel):
@@ -26,7 +28,7 @@ class Serverdata(BaseModel):
     auto_update: str = "yes"
 
 
-class Backuppaths(BaseModel):
+class Backup(BaseModel):
     backup_id: str = ""
     folder_to_backup: str = ""
     folder_to_save_backup: str = ""
@@ -37,13 +39,19 @@ class Backuppaths(BaseModel):
     status: str = ""
     version_history_length: int = 0
 
+class Script(BaseModel):
+    script_id: str = ""
+    file_path: str = ""
+    name: str = ""
+    last_execution: str = ""
+    execution_frequency: str = ""
+    status_message: str = ""
+    status: str = ""
 
 class Main(BaseModel):
     file_version: float = 0.0
-    backup_paths: list[Backuppaths] = Field(default_factory=list)
     userdata: list[Userdata] = Field(default_factory=list)
     serverdata: Serverdata = Field(default_factory=Serverdata)
-
 
 
 class UserStore:
@@ -152,7 +160,7 @@ def add_user(userdata):
         Userdata(
             user_id=userdata["user_id"],
             username=userdata["username"],
-            password_hash=userdata["password"],
+            password_hash=userdata["password_hash"],
             salt=userdata["salt"],
             rank=userdata["rank"]
         )
@@ -160,10 +168,32 @@ def add_user(userdata):
     save_file(data)
     return
 
-def add_backup_process(data):
+def add_backup_process(username, folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length):
     file = load_file()
-    file.backup_paths.append(
-        Backuppaths(
+    backup_id = str(uuid4())
+
+    for x, user in enumerate(file.userdata):
+        if user.username == username:
+            file.userdata[x].backup_processes.append(
+                Backup(
+                    backup_id=backup_id,
+                    folder_to_backup=folder_to_backup,
+                    folder_to_save_backup=folder_to_save_backup,
+                    name=name,
+                    last_backup="",
+                    backup_frequency=backup_frequency,
+                    status_message=status_message,
+                    status=status,
+                    version_history_length=version_history_length
+                )
+            )
+            save_file(file)
+    return backup_id
+
+def edit_backup_process(data, position):
+    file = load_file()
+    file.backup_paths[position](
+        Backup(
             backup_id=data["backup_id"],
             folder_to_backup=data["folder_to_backup"],
             folder_to_save_backup=data["folder_to_save_backup"],
@@ -177,19 +207,19 @@ def add_backup_process(data):
     )
     return
 
-def edit_backup_process(data, position):
+def add_script_process(file_path , name, execution_frequency, status_message, status):
+    script_id = str(uuid4())
+  
     file = load_file()
-    file.backup_paths[position](
-        Backuppaths(
-            backup_id=data["backup_id"],
-            folder_to_backup=data["folder_to_backup"],
-            folder_to_save_backup=data["folder_to_save_backup"],
-            name=data["name"],
-            last_backup=data["last_backup"],
-            backup_frequency=data["backup_frequency"],
-            status_message=data["status_message"],
-            status=data["status"],
-            version_history_length=data["version_history_length"]
+    file.script_paths.append(
+        Script(
+            script_id=script_id,
+            file_path=file_path,
+            name=name,
+            last_execution="",
+            execution_frequency=execution_frequency,
+            status_message=status_message,
+            status=status
         )
     )
-    return
+    return script_id
