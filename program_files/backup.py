@@ -51,43 +51,43 @@ def backup_folders(folder_to_backup, base_backup_dir, backup, now):
     save_file(file)
     return
 
-def check_for_backup(file, now):
-    backup_paths = []
-    for user in file.userdata:
-        for entry, backup in enumerate(user.backup_processes):
-            status = backup.status
-            if status == "running":
-                last_backup = backup.last_backup
-                folder_to_backup = Path(backup.folder_to_backup)
-                folder_to_save_backup = Path(backup.folder_to_save_backup)
-                if last_backup:
-                    backup_frequency = int(backup.backup_frequency)
-                    if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
-                        backup_folders(folder_to_backup, folder_to_save_backup, backup, now)
-                else:
-                    backup_folders(folder_to_backup, folder_to_save_backup, backup, now)
-                update_backup_times()
-            else:
-                continue
-    time.sleep(60)
+def check_for_backup(backup_process, now):
+    status = backup_process.status
+    if status == "running":
+        last_backup = backup_process.last_backup
+        folder_to_backup = Path(backup_process.folder_to_backup)
+        folder_to_save_backup = Path(backup_process.folder_to_save_backup)
+        if last_backup:
+            backup_frequency = int(backup_process.backup_frequency)
+            if now - datetime.fromisoformat(last_backup) >= timedelta(hours=backup_frequency):
+                backup_folders(folder_to_backup, folder_to_save_backup, backup_process, now)
+        else: # Only, if backup process is new (first time)
+            backup_folders(folder_to_backup, folder_to_save_backup, backup_process, now)
+        # update_backup_times()
+    return
 
+# Worker to coordinate the check, whether an backup or script process is need to being executet
 def intervall_worker():
     while True:
         file = load_file()
         now = datetime.now()
-        if file.backup_paths:
-            check_for_backup(file, now)
-        elif file.script_paths:
-            check_for_script(file, now)
-        else:
-            time.sleep(10)
-            continue
+        for user in file.userdata:
+            if user.backup_processes:
+                for entry in user.backup_processes:
+                    check_for_backup(entry, now)
+            elif user.script_processes:
+                for entry in user.backup_processes:
+                    check_for_script(entry, now)
+            else:
+                time.sleep(10)
+                continue
         time.sleep(60)
 
 def start_intervall_worker():
     thread = threading.Thread(target=intervall_worker, daemon=True)
     thread.start()
 
+"""
 def update_backup_times():
     file = load_file()
     backup_paths = file.backup_paths
@@ -97,7 +97,9 @@ def update_backup_times():
                    "last_backup": entry.last_backup}
         backup_times.append(content)
     send_socket('backup_time_update', backup_times)
+"""
 
+#TODO: an neue Struktur anpassen
 def delete_backup(folder_to_save_backup, version_history_length):
     print("Delete Backup")
     sorted_files = sort_folders(folder_to_save_backup)

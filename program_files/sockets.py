@@ -15,6 +15,12 @@ def get_backup_state(username):
         "backup_paths": [item.model_dump(mode="json") for item in data.backup_paths]
     }
 """
+def backup_processes(username):
+    file = load_file()
+    for user in file.userdata:
+        if user.username == username:
+            socketio.emit("available_backup_processes", user.backup_processes)
+
 def send_socket(channel, message):
     socketio.emit(channel, message)
     return

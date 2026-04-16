@@ -1,5 +1,4 @@
 const container = document.getElementById('backupContainer');
-const socket = io();
 
 let backupArray = [];
 
@@ -13,7 +12,7 @@ const keyReplacements = {
     'version_history_length': 'Number of max. stored backups'
 };
 
-function renderBackups(backups) {
+export function renderBackupCards(backups) {
     container.innerHTML = '';
     backupArray = backups;
 
@@ -104,10 +103,4 @@ function renderBackups(backups) {
     });
 }
 
-socket.on('connect', () => {
-    socket.emit('request_backup_state');
-});
 
-socket.on('backup_state', (data) => {
-    renderBackups(data.backup_paths || []);
-});

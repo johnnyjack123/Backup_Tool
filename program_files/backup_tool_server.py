@@ -6,7 +6,7 @@ from program_files.outsourced_functions import verify_user_access, check_rank, c
 from program_files.lib.account import set_cookie_key, login_required, check_log_in, log_user_in, signing_up, log_user_out, change_password, change_username
 from uuid import uuid4
 from program_files.logger import logger
-from program_files.backup import update_backup_times, start_intervall_worker
+from program_files.backup import start_intervall_worker
 from program_files.file_handler import load_file, save_file, add_backup_process, add_script_process, edit_backup_process
 
 def validate_filepath(path):
@@ -16,15 +16,15 @@ def validate_filepath(path):
     else:
         return False
 
-@socketio.on('connect')
-def handle_connect():
-    update_backup_times()
+#@socketio.on('connect')
+#def handle_connect():
+    # update_backup_times()
 
 @app.route("/")
 @login_required
 def home():
     file = load_file()
-    backup_paths = file.backup_paths
+    #backup_paths = file.backup_paths
     userdata = file.userdata
     visible_processes = []
     username = session.get("username")
@@ -37,10 +37,9 @@ def home():
             if user.username == username:
                 found = True
                 if user.backup_processes:
-                    for backup_process_id in user.backup_processes:
-                        for backup in backup_paths:
-                            if backup.backup_id == backup_process_id:
-                                visible_processes.append(backup)
+                    for backup in user.backup_processes:
+                        visible_processes.append(backup)
+                        
     except Exception as e:
         return render_template("error_page.html", error=f"Internal server error: {e}")
 
@@ -378,3 +377,5 @@ if __name__ == "__main__":
     start_intervall_worker()
     set_cookie_key()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+
+# TODO: safe shutil
