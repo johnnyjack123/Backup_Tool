@@ -4,20 +4,21 @@ from pathlib import Path
 from uuid import uuid4
 from program_files.logger import logger
 from program_files.file_handler import load_file, save_file
-
+from flask import session
 count = 0
 
 
-def verify_user_access(username, backup_id):
+def verify_user_access(user_id, backup_id):
     file = load_file()
     # Verify user access
     found = False
     userdata = file.userdata
     for user in userdata:
-        if user.username == username:
+        if user.user_id == user_id:
             for backup in user.backup_processes:
                 if backup == backup_id:
                     found = True
+                    break
     return found
 
 def sort_folders(folder_to_save_backup):
@@ -27,11 +28,11 @@ def sort_folders(folder_to_save_backup):
     sorted_files = sorted(files, key=lambda f: f.name)
     return sorted_files
 
-def check_rank(username, userdata):
+def check_rank(user_id, userdata):
     admin = False
     found = False
     for user in userdata:
-        if user.username == username:
+        if user.user_id == user_id:
             found = True
             if user.rank == "admin":
                 admin = True
@@ -49,13 +50,13 @@ def convert_home_path(file_path):
 
     return file_path
 
-def add_backup_to_user(backup_id, username):
+def add_backup_to_user(backup_id, user_id):
     file = load_file()
     userdata = file.userdata
     found = False
     try:
         for x, user in enumerate(userdata):
-            if user.username == username:
+            if user.user_id == user_id:
                 found = True
                 user.backup_processes.append(backup_id)
                 file.userdata[x] = user
@@ -71,13 +72,13 @@ def add_backup_to_user(backup_id, username):
     else:
         return True, ""
     
-def add_script_to_user(script_id, username):
+def add_script_to_user(user_id, script_id):
     file = load_file()
     userdata = file.userdata
     found = False
     try:
         for x, user in enumerate(userdata):
-            if user.username == username:
+            if user.user_id == user_id:
                 found = True
                 user.script_processes.append(script_id)
                 file.userdata[x] = user
@@ -92,6 +93,17 @@ def add_script_to_user(script_id, username):
         return False, msg
     else:
         return True, ""
+
+# Returns username based on userid
+def get_current_user():
+    user_id = session.get('user_id')
+    if not user_id:
+        return None
+    file = load_file()
+    for user in file.userdata:
+        if user.user_id == user_id:
+            return user
+    return None
 
 """
 def fill_backup_task(folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length, username):

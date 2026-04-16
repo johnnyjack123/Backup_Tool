@@ -168,12 +168,12 @@ def add_user(userdata):
     save_file(data)
     return
 
-def add_backup_process(username, folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length):
+def add_backup_process(user_id, folder_to_backup, folder_to_save_backup, name, backup_frequency, status_message, status, version_history_length):
     file = load_file()
     backup_id = str(uuid4())
 
     for x, user in enumerate(file.userdata):
-        if user.username == username:
+        if user.user_id == user_id:
             file.userdata[x].backup_processes.append(
                 Backup(
                     backup_id=backup_id,
@@ -190,9 +190,8 @@ def add_backup_process(username, folder_to_backup, folder_to_save_backup, name, 
             save_file(file)
     return backup_id
 
-def edit_backup_process(data, position):
-    file = load_file()
-    file.backup_paths[position](
+def edit_backup_process(data):
+    edited_backup_process = (
         Backup(
             backup_id=data["backup_id"],
             folder_to_backup=data["folder_to_backup"],
@@ -205,7 +204,7 @@ def edit_backup_process(data, position):
             version_history_length=data["version_history_length"]
         )
     )
-    return
+    return edited_backup_process
 
 def add_script_process(file_path , name, execution_frequency, status_message, status):
     script_id = str(uuid4())

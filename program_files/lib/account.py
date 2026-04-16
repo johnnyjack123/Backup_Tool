@@ -6,6 +6,7 @@ from flask import redirect, url_for, session
 from uuid import uuid4
 from program_files.file_handler import load_file, save_file, add_user
 from program_files.logger import logger
+from program_files.outsourced_functions import get_current_user
 
 def set_cookie_key():
     file = load_file()
@@ -20,6 +21,11 @@ def set_cookie_key():
         save_file(file)
 
     app.secret_key = cookie_key
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Strict",
+        # SESSION_COOKIE_SECURE=True,  # TODO: aktivieren sobald HTTPS -> schauen, das erkennt oder so, wenn https
+    )
 
 def login_required(f):
     @wraps(f)
@@ -30,11 +36,16 @@ def login_required(f):
     return wrapper
 
 def validate_passwords(password, confirmed_password, salt, username, mode):
+    success = False
+
+    if not username:
+        return "Username not found in validate_passwords.", success
+    
     file = load_file()
+
     userdata = file.userdata
     hashed_password = hashlib.sha256((str(password) + salt).encode()).hexdigest()
     hashed_confirmed_password = hashlib.sha256((str(confirmed_password) + salt).encode()).hexdigest()
-    success = False
     if hashed_password != hashed_confirmed_password:
         return "No password match or username already exists.", success
     if mode != "password only":
@@ -47,14 +58,15 @@ def validate_passwords(password, confirmed_password, salt, username, mode):
     return hashed_password, success
 
 def check_log_in():
-    username = session.get('username')
+    user_id = session.get('user_id')
     file = load_file()
     userdata = file.userdata
     for user in userdata:
-        if user.username == username:
+        if user.user_id == user_id:
             return True
     return False
 
+# Need username instead of user_id, because user_id gets set here
 def log_user_in(username, password):
     file = load_file()
     userdata = file.userdata
@@ -65,7 +77,6 @@ def log_user_in(username, password):
                 hashed_password = hashlib.sha256((password + salt).encode()).hexdigest()
                 print(f"Password hash {hashed_password}, {user.password_hash}")
                 if hashed_password == user.password_hash:
-                    session['username'] = username
                     session['user_id'] = user.user_id
                     return "success"
                 else:
@@ -74,6 +85,7 @@ def log_user_in(username, password):
                 return "No password"
     return "User not found"
 
+# Needs username instead of user_id
 def signing_up(username, password, confirmed_password):
     file = load_file()
     userdata = file.userdata
@@ -100,16 +112,16 @@ def signing_up(username, password, confirmed_password):
         return hashed_password
 
 def log_user_out():
-    session.clear()  # oder: session.pop('user_id', None); session.pop('username', None)
+    session.clear()
     return redirect(url_for("log_in_page"))
 
-def change_password(file, username, password, confirmed_password):
+def change_password(file, user_id, password, confirmed_password):
     for x, user in enumerate(file.userdata):
-        if user.username == username:
+        if user.user_id == user_id:
             salt = user.salt
             if not salt:
                 return False, "No salt found"
-
+            username = get_current_user()
             hashed_password, success = validate_passwords(password, confirmed_password, salt, username, "password only")
             if success:
                 user.password_hash = hashed_password
@@ -123,10 +135,10 @@ def change_password(file, username, password, confirmed_password):
                 return False, msg
     return False, "User not found"
 
-def change_username(file, username, new_username):
+def change_username(file, user_id, new_username):
     found = False
     for x, user in enumerate(file.userdata):
-        if user.username == username:
+        if user.user_id == user_id:
             found = True
             user.username = new_username
             file.userdata[x] = user
